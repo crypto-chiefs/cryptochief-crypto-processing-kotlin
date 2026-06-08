@@ -1,0 +1,12 @@
+.gradle/
+build/
+out/
+.idea/
+*.iml
+*.iws
+*.ipr
+local.properties
+.DS_Store
+
+secring.gpg
+sonatype-credentials.properties
