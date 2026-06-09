@@ -301,7 +301,7 @@ try {
 
 ## Other SDKs
 
-SDKs for other languages are listed at [crypto-chief.com/processing/](https://crypto-chief.com/processing/).
+SDKs for other languages are listed at [docs-sdk.crypto-chief.com/processing/processing](https://docs-sdk.crypto-chief.com/processing/processing).
 
 ## License
 
