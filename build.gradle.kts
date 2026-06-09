@@ -11,7 +11,7 @@ plugins {
     `java-library`
 }
 
-group = "com.crypto-chiefs"
+group = "com.crypto-chief"
 version = "0.1.0"
 
 description = "Kotlin SDK for the Crypto Chief crypto-processing API."

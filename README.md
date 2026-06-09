@@ -1,6 +1,6 @@
 # Crypto Chief crypto-processing SDK for Kotlin / JVM
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.crypto-chiefs/cryptochief-crypto-processing-kotlin.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/com.crypto-chiefs/cryptochief-crypto-processing-kotlin)
+[![Maven Central](https://img.shields.io/maven-central/v/com.crypto-chief/cryptochief-crypto-processing-kotlin.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/com.crypto-chief/cryptochief-crypto-processing-kotlin)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.0.21-blue.svg?logo=kotlin)](http://kotlinlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -12,7 +12,7 @@ Kotlin / JVM SDK for the [Crypto Chief](https://crypto-chief.com/processing/) cr
 
 ```kotlin
 dependencies {
-    implementation("com.crypto-chiefs:cryptochief-crypto-processing-kotlin:0.1.0")
+    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.1.0")
 }
 ```
 
@@ -20,7 +20,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'com.crypto-chiefs:cryptochief-crypto-processing-kotlin:0.1.0'
+    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.1.0'
 }
 ```
 
@@ -28,7 +28,7 @@ dependencies {
 
 ```xml
 <dependency>
-  <groupId>com.crypto-chiefs</groupId>
+  <groupId>com.crypto-chief</groupId>
   <artifactId>cryptochief-crypto-processing-kotlin</artifactId>
   <version>0.1.0</version>
 </dependency>
