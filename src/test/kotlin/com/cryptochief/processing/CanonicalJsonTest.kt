@@ -3,7 +3,6 @@ package com.cryptochief.processing
 import com.cryptochief.processing.http.CanonicalJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -24,16 +23,16 @@ class CanonicalJsonTest {
 
     @Test
     fun `keys are sorted recursively`() {
-        val bytes = CanonicalJson.encode(
-            Sample(zeta = "z", alpha = 1, nested = Nested(zoo = listOf(3, 2, 1), apple = "a")),
-        )
+        val sample = Sample(zeta = "z", alpha = 1, nested = Nested(zoo = listOf(3, 2, 1), apple = "a"))
+        val element = CanonicalJson.json.encodeToJsonElement(Sample.serializer(), sample)
+        val bytes = CanonicalJson.encode(element)
         val text = bytes.toString(Charsets.UTF_8)
         assertEquals("""{"alpha":1,"nested":{"apple":"a","zoo":[3,2,1]},"zeta":"z"}""", text)
     }
 
     @Test
     fun `null payload returns empty bytes`() {
-        val bytes = CanonicalJson.encode<JsonElement?>(null)
+        val bytes = CanonicalJson.encode(null)
         assertEquals(0, bytes.size)
     }
 

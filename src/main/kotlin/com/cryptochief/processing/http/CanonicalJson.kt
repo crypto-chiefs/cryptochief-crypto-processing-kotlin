@@ -22,13 +22,10 @@ public object CanonicalJson {
         classDiscriminator = "_type"
     }
 
-    public fun encode(element: JsonElement): ByteArray =
-        json.encodeToString(JsonElement.serializer(), sortKeysRecursive(element)).toByteArray(Charsets.UTF_8)
-
-    public inline fun <reified T> encode(value: T): ByteArray {
-        if (value == null) return EMPTY
-        val raw = json.encodeToJsonElement(value)
-        return encode(raw)
+    public fun encode(element: JsonElement?): ByteArray {
+        if (element == null) return EMPTY
+        return json.encodeToString(JsonElement.serializer(), sortKeysRecursive(element))
+            .toByteArray(Charsets.UTF_8)
     }
 
     public val EMPTY: ByteArray = ByteArray(0)
