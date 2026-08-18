@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.0] — 2026-08-18
+
+- `client.credits.balance()` — `POST /v1/credits/balance` (billing-exempt): current credits/USD balance, postpaid flag, debt limit, and gas-operations gate status
+- `client.credits.topup()` — `POST /v1/credits/topup` (billing-exempt): create a hosted-payment-link invoice to top up credits with USDT/USDC, optional success/error redirect URLs
+
 ## [0.1.0] — 2026-06-07
 
 Initial release.
