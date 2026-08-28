@@ -87,7 +87,7 @@ fun main() = runBlocking {
 | `client.transactions` | sign, execute, info, history + EVM/TRON/Solana/TON helpers |
 | `client.payIns` | create, info, history, cancel, selectAsset, resetAsset |
 | `client.wallets` | generate, list, info, freeze, decryptPrivateKey |
-| `client.sweeps` | force, history, walletHistory |
+| `client.sweeps` | force, history, walletHistory, settings, updateSettings |
 | `client.withdrawals` | info, history |
 | `client.staticDeposits` | info, history |
 | `client.blockchain` | contractsAvailable, walletBalance, transactionStatus |
@@ -134,6 +134,34 @@ val invoice = client.payIns.create(
 )
 println("pay to ${invoice.toAddress}")
 ```
+
+## Auto-sweep settings
+
+A deposit wallet is swept to your master wallet on a policy: as soon as funds arrive, once
+the balance reaches an amount, or never on its own (a force sweep still works).
+
+```kotlin
+val s = client.sweeps.updateSettings(
+    address = depositAddress,
+    typeWork = SweepFieldWrite.Set(SweepPolicyMode.THRESHOLD),
+    thresholdAmountUsd = SweepFieldWrite.Set("250"),
+)
+println(s.effective.typeWork)   // what will actually happen
+println(s.effective.source)     // which layer decided it
+```
+
+The read comes back in three layers — `effective` (what will happen), `override` (what this
+wallet decides for itself) and `projectDefault` (what it falls back to) — because only the
+three together say whether a value is yours or inherited.
+
+Inheritance is per field: writing the mode leaves the fee mode inherited. `null` leaves a
+field alone, `SweepFieldWrite.Inherit` stops overriding it.
+
+A sweep is broadcast first and confirmed after: `SweepStatus.BROADCASTED` means the
+transaction is out and not yet confirmed, `SweepStatus.COMPLETED` means confirmed, with
+`sweepConfirmations` and `completedAt` filled in. Earlier platform versions reported
+`completed` at broadcast, so a sweep could read as settled while its transaction was still
+unconfirmed.
 
 ## Contract calls
 
