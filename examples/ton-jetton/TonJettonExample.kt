@@ -37,10 +37,15 @@ fun main(args: Array<String>): Unit = runBlocking {
         val executed = client.transactions.execute(signed.uuid)
         println("broadcasting: status=${executed.status}")
 
-        val final = client.waitForTransaction(
+        val last = client.waitForTransaction(
             uuid = executed.uuid,
             options = PollOptions(timeout = Duration.ofMinutes(2)),
         )
-        println("final: status=${final.status} hash=${final.txHash.orEmpty()}")
+        // A timeout hands back the last snapshot, not a confirmed transaction. Only isTerminal tells them apart.
+        if (last.isTerminal) {
+            println("final: status=${last.status} hash=${last.txHash.orEmpty()}")
+        } else {
+            println("pending: status=${last.status} hash=${last.txHash.orEmpty()} (gave up waiting after 2m)")
+        }
     }
 }

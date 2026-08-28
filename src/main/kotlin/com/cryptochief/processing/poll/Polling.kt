@@ -10,6 +10,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 
+/** On timeout returns the last snapshot rather than throwing: check [PayoutInfo.isTerminal]. */
 public suspend fun CryptoChiefClient.waitForPayout(
     uuid: String,
     options: PollOptions = PollOptions(),
@@ -17,6 +18,7 @@ public suspend fun CryptoChiefClient.waitForPayout(
     fetch = { payouts.info(uuid) },
     isTerminal = { it.isTerminal })
 
+/** On timeout returns the last snapshot rather than throwing: check [TransactionInfo.isTerminal]. */
 public suspend fun CryptoChiefClient.waitForTransaction(
     uuid: String,
     options: PollOptions = PollOptions(),
@@ -24,6 +26,7 @@ public suspend fun CryptoChiefClient.waitForTransaction(
     fetch = { transactions.info(uuid) },
     isTerminal = { it.isTerminal })
 
+/** On timeout returns the last snapshot rather than throwing: check [PayIn.isTerminal]. */
 public suspend fun CryptoChiefClient.waitForPayIn(
     uuid: String,
     options: PollOptions = PollOptions(),

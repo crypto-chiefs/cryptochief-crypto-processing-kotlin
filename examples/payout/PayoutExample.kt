@@ -46,10 +46,15 @@ fun main(args: Array<String>): Unit = runBlocking {
         )
         println("created: uuid=${payout.uuid} status=${payout.status}")
 
-        val terminal = client.waitForPayout(
+        val last = client.waitForPayout(
             uuid = payout.uuid,
             options = PollOptions(interval = Duration.ofSeconds(5), timeout = Duration.ofMinutes(5)),
         )
-        println("final:   status=${terminal.status} txid=${terminal.txid.orEmpty()}")
+        // A timeout hands back the last snapshot, not a settled payout. Only isTerminal tells them apart.
+        if (last.isTerminal) {
+            println("final:   status=${last.status} txid=${last.txid.orEmpty()}")
+        } else {
+            println("pending: status=${last.status} txid=${last.txid.orEmpty()} (gave up waiting after 5m)")
+        }
     }
 }

@@ -59,10 +59,16 @@ fun main(args: Array<String>): Unit = runBlocking {
             println("pay to: ${invoice.toAddress} (${invoice.paymentCoin} on ${invoice.paymentNetwork})")
         }
 
-        val terminal = client.waitForPayIn(
+        val last = client.waitForPayIn(
             uuid = invoice.uuid,
             options = PollOptions(interval = Duration.ofSeconds(10), timeout = Duration.ofMinutes(15)),
         )
-        println("final: status=${terminal.status}")
+        // A timeout hands back the last snapshot, not a settled invoice. Only isTerminal tells them apart,
+        // and an unpaid invoice normally outlives this wait: it stays payable for the full lifetimeSec.
+        if (last.isTerminal) {
+            println("final: status=${last.status}")
+        } else {
+            println("pending: status=${last.status} (gave up waiting after 15m, invoice still open)")
+        }
     }
 }
