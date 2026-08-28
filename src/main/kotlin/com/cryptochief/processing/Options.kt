@@ -67,5 +67,5 @@ public class Options private constructor(
 }
 
 public object BuildInfo {
-    public const val VERSION: String = "0.1.0"
+    public const val VERSION: String = "0.4.0"
 }
