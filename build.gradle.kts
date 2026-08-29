@@ -12,7 +12,7 @@ plugins {
 }
 
 group = "com.crypto-chief"
-version = "0.4.0"
+version = "0.5.0"
 
 description = "Kotlin SDK for the Crypto Chief crypto-processing API."
 
@@ -60,6 +60,11 @@ tasks.test {
     testLogging {
         events("passed", "failed", "skipped")
     }
+    // Options.VERSION is a hand-maintained second copy of the version above, and
+    // the two drifted once already - a release announced itself to the API as an
+    // older number for months, because nothing compared them. Hand the real
+    // version to the test JVM so VersionTest can.
+    systemProperty("project.version", project.version.toString())
 }
 
 tasks.withType<Jar>().configureEach {
