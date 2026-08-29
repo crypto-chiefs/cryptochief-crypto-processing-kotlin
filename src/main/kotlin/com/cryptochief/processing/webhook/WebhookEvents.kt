@@ -88,6 +88,70 @@ public data class StaticDepositWebhookEvent(
     @SerialName("paid_at") val paidAt: String? = null,
 )
 
+/**
+ * Funds swept off a deposit wallet, confirmed on chain. Event name
+ * `sweep.confirmed` - the only sweep event the platform emits.
+ *
+ * There is deliberately no `sweep.broadcasted`: "we sent it" is not something
+ * you can act on, and an event that means "maybe" is one more thing to
+ * reconcile.
+ *
+ * A `static_deposit.paid` tells you a customer paid you. This tells you the
+ * money has finished moving into your own custody - until it fires, the balance
+ * still sits on the deposit address. Reconciliation, treasury reporting and
+ * "funds available to pay out" all key off this event, not off the deposit.
+ *
+ * Sweeps run on static deposit wallets AND on the transit wallets issued per
+ * pay-in order; both deliver here, to the callback URL configured for the wallet
+ * the funds left.
+ *
+ * @property taskId the sweeper task; one sweep settles once, so use it as your
+ *   idempotency key
+ * @property status always `completed` - a sweep reaches you in no other state
+ * @property walletAddress the wallet the funds left, i.e. the address your
+ *   customer paid into
+ * @property toAddress the master wallet they landed on
+ * @property assetType `native` or `token`
+ * @property gasPumpTxHash set when the platform had to fund gas on the wallet
+ *   before it could sweep
+ * @property sweepConfirmations what makes this event true rather than hopeful,
+ *   and never zero; it travels with the event rather than being implied by it,
+ *   because "confirmed" is not the same number on every chain and your own
+ *   finality policy needs the count to apply it
+ * @property confirmedAt when the chain was observed to hold the sweep; NOT the
+ *   task's completion timestamp, which is stamped on every terminal outcome
+ *   including failures and so says nothing about settlement
+ * @property typeWork what triggered it: `momentum`, `threshold` or `force`
+ * @property totalFeeUsd what the sweep cost: network fee plus any gas or energy
+ *   the platform fronted to make it possible
+ */
+@Serializable
+public data class SweepWebhookEvent(
+    @SerialName("event") val event: String,
+    @SerialName("task_id") val taskId: String,
+    @SerialName("status") val status: String,
+    @SerialName("wallet_address") val walletAddress: String,
+    @SerialName("to_address") val toAddress: String? = null,
+    @SerialName("network") val network: Chain? = null,
+    @SerialName("chain_family") val chainFamily: String? = null,
+    @SerialName("asset_symbol") val assetSymbol: String,
+    @SerialName("asset_contract") val assetContract: String? = null,
+    @SerialName("asset_type") val assetType: String? = null,
+    @SerialName("amount_raw") val amountRaw: String? = null,
+    @SerialName("amount_human") val amountHuman: String? = null,
+    @SerialName("sweep_tx_hash") val sweepTxHash: String,
+    @SerialName("gas_pump_tx_hash") val gasPumpTxHash: String? = null,
+    @SerialName("sweep_confirmations") val sweepConfirmations: Int = 0,
+    @SerialName("confirmed_at") val confirmedAt: String? = null,
+    @SerialName("type_work") val typeWork: String? = null,
+    @SerialName("total_fee_usd") val totalFeeUsd: String? = null,
+) {
+    public companion object {
+        /** The only sweep event the platform emits. */
+        public const val EVENT_CONFIRMED: String = "sweep.confirmed"
+    }
+}
+
 /** Verify + decode in one call. */
 public object WebhookHandler {
     public inline fun <reified T> handle(
