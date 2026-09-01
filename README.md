@@ -86,7 +86,7 @@ fun main() = runBlocking {
 | `client.payouts` | estimate, execute, info, history, batchEstimate, batchExecute |
 | `client.transactions` | sign, execute, info, history + EVM/TRON/Solana/TON helpers |
 | `client.payIns` | create, info, history, cancel, selectAsset, resetAsset |
-| `client.wallets` | generate, list, info, freeze, decryptPrivateKey |
+| `client.wallets` | generate, list, info, freeze, rebindMaster, setCallbackUrl, clearCallbackUrl, decryptPrivateKey |
 | `client.sweeps` | force, history, walletHistory, settings, updateSettings |
 | `client.withdrawals` | info, history |
 | `client.staticDeposits` | info, history |
@@ -134,6 +134,56 @@ val invoice = client.payIns.create(
 )
 println("pay to ${invoice.toAddress}")
 ```
+
+## Wallets
+
+Generate a wallet of any type. `label` names it for whoever reads a list of a hundred
+addresses later — it applies to every type, not just static ones, and is capped at 255
+characters:
+
+```kotlin
+import com.cryptochief.processing.ChainFamily
+import com.cryptochief.processing.models.GenerateWalletRequest
+import com.cryptochief.processing.models.WalletType
+
+val w = client.wallets.generate(
+    GenerateWalletRequest(
+        walletType          = WalletType.STATIC,
+        chainFamily         = ChainFamily.EVM,
+        masterWalletAddress = "0x...",                          // optional
+        callbackUrl         = "https://your.app/webhooks/deposit", // static only
+        label               = "shop-42 checkout",                // optional
+    ),
+)
+```
+
+Both `master_wallet_address` and `callback_url` come back on every wallet response, `null`
+when the wallet has none — never an empty string, never an absent key.
+
+### Re-pointing a wallet at another master
+
+```kotlin
+val w = client.wallets.rebindMaster(address = depositAddress, masterWalletAddress = "0x...")
+println(w.masterWalletAddress)
+```
+
+It moves no money. It changes where the **next** sweep settles, including sweeps already
+queued — the sweeper reads the link when it runs. Anything already swept is on the previous
+master and has to be moved from there.
+
+Idempotent: a wallet already bound to that master answers 200 unchanged. Master wallets
+cannot be re-pointed, and the new master must be of the same chain family and not frozen.
+
+### Changing a static wallet's deposit webhook
+
+```kotlin
+client.wallets.setCallbackUrl(depositAddress, "https://your.app/webhooks/deposit")
+client.wallets.clearCallbackUrl(depositAddress)   // stop announcing deposits here
+```
+
+An empty URL is a value, not an omission, and the SDK sends it as one. Static wallets only:
+a master or transit has no per-deposit callback. A deposit already announced is not
+re-announced to the new URL.
 
 ## Auto-sweep settings
 

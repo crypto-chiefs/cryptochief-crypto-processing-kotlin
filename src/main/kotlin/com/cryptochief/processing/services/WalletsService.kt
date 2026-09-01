@@ -6,6 +6,8 @@ import com.cryptochief.processing.http.HttpTransport
 import com.cryptochief.processing.models.AddressRequest
 import com.cryptochief.processing.models.GenerateWalletRequest
 import com.cryptochief.processing.models.ListWalletsResponse
+import com.cryptochief.processing.models.RebindMasterRequest
+import com.cryptochief.processing.models.SetCallbackUrlRequest
 import com.cryptochief.processing.models.Wallet
 import com.cryptochief.processing.rsa.RsaDecrypt
 import kotlinx.serialization.json.JsonObject
@@ -48,6 +50,60 @@ public class WalletsService internal constructor(
             responseSerializer = serializer(),
             body = AddressRequest(address),
         )
+
+    /**
+     * Re-point a transit or static wallet at another master of the same project. Returns
+     * the wallet as it stands afterwards.
+     *
+     * **It moves no money.** It changes where the NEXT sweep settles — including sweeps
+     * already queued, since the sweeper reads the link when it runs rather than capturing
+     * it on the task. Anything already swept is sitting on the previous master and has to
+     * be moved from there.
+     *
+     * The master link used to be decided once, at creation: a wallet minted without
+     * [GenerateWalletRequest.masterWalletAddress] went to the project's oldest master of
+     * the family, which on an installation serving several merchants is somebody else's
+     * wallet. This is the way back.
+     *
+     * Idempotent — a wallet already bound to [masterWalletAddress] answers 200 unchanged.
+     * Refused for a master wallet (it is a destination, not a dependant), for a master of
+     * a different chain family, and for a frozen master. Both addresses are resolved
+     * against the calling project, so one that is not yours reads as not found rather
+     * than admitting it exists.
+     */
+    public suspend fun rebindMaster(address: String, masterWalletAddress: String): Wallet =
+        transport.send(
+            path = "/v1/wallets/rebind-master",
+            requestSerializer = serializer<RebindMasterRequest>(),
+            responseSerializer = serializer(),
+            body = RebindMasterRequest(address, masterWalletAddress),
+        )
+
+    /**
+     * Set — or, with an empty [callbackUrl], clear — the deposit webhook of a STATIC
+     * wallet after it was created. Returns the wallet as it stands afterwards.
+     *
+     * Until this existed a callback could be chosen when the address was minted and never
+     * again, which left nothing for the two cases that matter: addresses imported from a
+     * platform that created them elsewhere, and an endpoint that moved.
+     *
+     * An empty string is a value, not an omission — it means "stop announcing deposits
+     * here" — and it is sent as such. Use [clearCallbackUrl] to say so plainly.
+     *
+     * Static wallets only: a master or transit has no per-deposit callback and answers
+     * 400. A deposit already announced is not re-announced to the new URL; the change
+     * applies to what arrives next.
+     */
+    public suspend fun setCallbackUrl(address: String, callbackUrl: String): Wallet =
+        transport.send(
+            path = "/v1/wallets/callback-url",
+            requestSerializer = serializer<SetCallbackUrlRequest>(),
+            responseSerializer = serializer(),
+            body = SetCallbackUrlRequest(address, callbackUrl),
+        )
+
+    /** [setCallbackUrl] with an empty URL: deposits to [address] stop being announced. */
+    public suspend fun clearCallbackUrl(address: String): Wallet = setCallbackUrl(address, "")
 
     /** Requires [com.cryptochief.processing.Options.rsaPrivateKey] to be set. */
     public fun decryptPrivateKey(encrypted: String): String {
