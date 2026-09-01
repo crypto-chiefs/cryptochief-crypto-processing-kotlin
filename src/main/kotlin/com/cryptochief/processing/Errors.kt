@@ -57,6 +57,13 @@ public object ErrorCode {
     public const val ORDER_NOT_LIVE: String = "ORDER_NOT_LIVE"
     public const val ASSET_ALREADY_SELECTED: String = "ASSET_ALREADY_SELECTED"
     public const val INVALID_PARAMS: String = "INVALID_PARAMS"
+
+    /**
+     * A wallet label over 255 characters. A real machine code from the gateway,
+     * unlike the upstream refusals that arrive as SERVICE_ERROR with the detail
+     * in the message.
+     */
+    public const val LABEL_TOO_LONG: String = "LABEL_TOO_LONG"
     public const val SERVICE_ERROR: String = "SERVICE_ERROR"
     public const val UNAUTHORIZED: String = "UNAUTHORIZED"
     public const val URL_CALLBACK_REQUIRED: String = "URL_CALLBACK_REQUIRED"

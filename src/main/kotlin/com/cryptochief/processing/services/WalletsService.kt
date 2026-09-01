@@ -8,6 +8,7 @@ import com.cryptochief.processing.models.GenerateWalletRequest
 import com.cryptochief.processing.models.ListWalletsResponse
 import com.cryptochief.processing.models.RebindMasterRequest
 import com.cryptochief.processing.models.SetCallbackUrlRequest
+import com.cryptochief.processing.models.SetLabelRequest
 import com.cryptochief.processing.models.Wallet
 import com.cryptochief.processing.rsa.RsaDecrypt
 import kotlinx.serialization.json.JsonObject
@@ -104,6 +105,36 @@ public class WalletsService internal constructor(
 
     /** [setCallbackUrl] with an empty URL: deposits to [address] stop being announced. */
     public suspend fun clearCallbackUrl(address: String): Wallet = setCallbackUrl(address, "")
+
+    /**
+     * Set — or, with an empty [label], clear — a wallet's human-readable name. Returns the
+     * wallet as it stands afterwards.
+     *
+     * A name could be chosen when the address was minted and, over the API, never again:
+     * renaming meant a panel, one wallet at a time. That is no use to an integration
+     * holding a list of a hundred addresses, which is exactly where a name earns its keep.
+     *
+     * Every wallet type takes one, unlike [setCallbackUrl] — a label names the wallet, it
+     * does not describe its role, so a master is as nameable as a static deposit address.
+     *
+     * An empty string is a value, not an omission — it means "this wallet has no name" —
+     * and it is sent as such. Use [clearLabel] to say so plainly. Afterwards the wallet
+     * reads back with [Wallet.label] `null`, not `""`.
+     *
+     * At most 255 characters, counted as characters rather than bytes so a label in a
+     * non-Latin script measures the way its author would count it; longer is refused with
+     * `LABEL_TOO_LONG`.
+     */
+    public suspend fun setLabel(address: String, label: String): Wallet =
+        transport.send(
+            path = "/v1/wallets/label",
+            requestSerializer = serializer<SetLabelRequest>(),
+            responseSerializer = serializer(),
+            body = SetLabelRequest(address, label),
+        )
+
+    /** [setLabel] with an empty label: [address] goes back to having no name. */
+    public suspend fun clearLabel(address: String): Wallet = setLabel(address, "")
 
     /** Requires [com.cryptochief.processing.Options.rsaPrivateKey] to be set. */
     public fun decryptPrivateKey(encrypted: String): String {

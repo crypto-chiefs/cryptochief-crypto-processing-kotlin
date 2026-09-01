@@ -86,7 +86,7 @@ fun main() = runBlocking {
 | `client.payouts` | estimate, execute, info, history, batchEstimate, batchExecute |
 | `client.transactions` | sign, execute, info, history + EVM/TRON/Solana/TON helpers |
 | `client.payIns` | create, info, history, cancel, selectAsset, resetAsset |
-| `client.wallets` | generate, list, info, freeze, rebindMaster, setCallbackUrl, clearCallbackUrl, decryptPrivateKey |
+| `client.wallets` | generate, list, info, freeze, rebindMaster, setCallbackUrl, clearCallbackUrl, setLabel, clearLabel, decryptPrivateKey |
 | `client.sweeps` | force, history, walletHistory, settings, updateSettings |
 | `client.withdrawals` | info, history |
 | `client.staticDeposits` | info, history |
@@ -157,8 +157,9 @@ val w = client.wallets.generate(
 )
 ```
 
-Both `master_wallet_address` and `callback_url` come back on every wallet response, `null`
-when the wallet has none — never an empty string, never an absent key.
+`master_wallet_address`, `callback_url` and `label` come back on every wallet response —
+generation, info, the list, and the responses of the three update endpoints below. Each is
+`null` when the wallet has none: never an empty string, never an absent key.
 
 ### Re-pointing a wallet at another master
 
@@ -184,6 +185,21 @@ client.wallets.clearCallbackUrl(depositAddress)   // stop announcing deposits he
 An empty URL is a value, not an omission, and the SDK sends it as one. Static wallets only:
 a master or transit has no per-deposit callback. A deposit already announced is not
 re-announced to the new URL.
+
+### Naming a wallet after the fact
+
+```kotlin
+val w = client.wallets.setLabel(depositAddress, "shop-42 checkout")
+println(w.label)
+
+client.wallets.clearLabel(depositAddress)   // back to no name at all
+```
+
+An empty label is a value, not an omission, and the SDK sends it as one — that is how a
+name is cleared. Afterwards the wallet reads back with `label` `null`, not `""`.
+
+Every wallet type can be renamed, unlike a callback URL: a label names the wallet, it does
+not describe its role. Capped at 255 characters, longer refused with `LABEL_TOO_LONG`.
 
 ## Auto-sweep settings
 

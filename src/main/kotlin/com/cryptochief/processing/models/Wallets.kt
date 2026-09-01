@@ -69,6 +69,16 @@ public data class Wallet(
      * whose callback was never set or has been cleared.
      */
     @SerialName("callback_url") val callbackUrl: String? = null,
+    /**
+     * The wallet's human-readable name, or `null` when it has none. Unlike [callbackUrl]
+     * every wallet type carries one — a master is as nameable as a static deposit
+     * address — and it comes back on every response that describes a wallet.
+     *
+     * `null` and only `null` means "no name": the API never answers an empty string here,
+     * and the key is always present, so a wallet that was never named cannot be confused
+     * with one the platform declined to tell you about.
+     */
+    @SerialName("label") val label: String? = null,
     @SerialName("private_key_encrypted") val privateKeyEncrypted: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("coins") val coins: List<WalletCoinBalance> = emptyList(),
@@ -99,4 +109,16 @@ internal data class RebindMasterRequest(
 internal data class SetCallbackUrlRequest(
     @SerialName("address") val address: String,
     @SerialName("callback_url") val callbackUrl: String,
+)
+
+/**
+ * [label] is a plain non-null [String] for the reason [SetCallbackUrlRequest.callbackUrl]
+ * is: an empty one is an instruction — "this wallet has no name" — and the endpoint tells
+ * it apart from a field that was never sent, which it refuses. Modelling it nullable would
+ * let the SDK drop the difference on the floor, since this SDK omits nulls from the wire.
+ */
+@Serializable
+internal data class SetLabelRequest(
+    @SerialName("address") val address: String,
+    @SerialName("label") val label: String,
 )

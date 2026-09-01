@@ -44,7 +44,7 @@ class WalletsServiceTest {
         server.shutdown()
     }
 
-    /** A static wallet with both nullable links filled in. */
+    /** A static wallet with every nullable field filled in. */
     private val staticWalletBody = """
         {
           "type": "static",
@@ -52,7 +52,8 @@ class WalletsServiceTest {
           "chain_family": "EVM",
           "frozen": false,
           "master_wallet_address": "0xbeef",
-          "callback_url": "https://your.app/webhooks/deposit"
+          "callback_url": "https://your.app/webhooks/deposit",
+          "label": "shop-42 checkout"
         }
     """.trimIndent()
 
@@ -127,6 +128,72 @@ class WalletsServiceTest {
         assertEquals(WalletType.MASTER, out.type)
     }
 
+    // ---- label ---------------------------------------------------------------------
+
+    @Test
+    fun `setLabel posts the address and the label`() = runBlocking {
+        enqueue(staticWalletBody)
+
+        val out = client.wallets.setLabel("0xdead", "shop-42 checkout")
+
+        val req = taken()
+        assertEquals("/v1/wallets/label", req.path)
+        val body = req.json()
+        assertEquals("0xdead", body["address"]?.jsonPrimitive?.content)
+        assertEquals("shop-42 checkout", body["label"]?.jsonPrimitive?.content)
+        assertEquals(setOf("address", "label"), body.keys)
+        assertEquals("shop-42 checkout", out.label)
+    }
+
+    @Test
+    fun `an empty label is sent rather than omitted`() = runBlocking {
+        enqueue(
+            """{"type":"static","address":"0xdead","chain_family":"EVM","frozen":false,
+               "master_wallet_address":"0xbeef","callback_url":null,"label":null}""".trimIndent(),
+        )
+
+        val out = client.wallets.setLabel("0xdead", "")
+
+        val body = taken().json()
+        // "" means "this wallet has no name". Dropping it would turn a clear into a
+        // missing field, which the endpoint refuses - the caller's intent would be lost
+        // with an INVALID_PARAMS rather than carried out.
+        assertTrue(body.containsKey("label"))
+        assertEquals("", body["label"]?.jsonPrimitive?.content)
+        // And a cleared name reads back as null, never as the empty string that cleared it.
+        assertNull(out.label)
+    }
+
+    @Test
+    fun `clearLabel is setLabel with an empty label`() = runBlocking {
+        enqueue(
+            """{"type":"static","address":"0xdead","chain_family":"EVM","frozen":false,
+               "master_wallet_address":"0xbeef","callback_url":null,"label":null}""".trimIndent(),
+        )
+
+        client.wallets.clearLabel("0xdead")
+
+        val body = taken().json()
+        assertEquals("", body["label"]?.jsonPrimitive?.content)
+        assertEquals(setOf("address", "label"), body.keys)
+    }
+
+    @Test
+    fun `a master wallet can be renamed too, unlike its callback url`() = runBlocking {
+        enqueue(
+            """{"type":"master","address":"TX","chain_family":"TRON","frozen":false,
+               "master_wallet_address":null,"callback_url":null,"label":"treasury"}""".trimIndent(),
+        )
+
+        val out = client.wallets.setLabel("TX", "treasury")
+
+        assertEquals("/v1/wallets/label", taken().path)
+        assertEquals(WalletType.MASTER, out.type)
+        assertEquals("treasury", out.label)
+        // The callback stays a static-only concept; a name is not.
+        assertNull(out.callbackUrl)
+    }
+
     // ---- rebind-master -------------------------------------------------------------
 
     @Test
@@ -198,7 +265,7 @@ class WalletsServiceTest {
     // ---- the wallet-info response shape --------------------------------------------
 
     @Test
-    fun `a null master wallet address and callback url decode cleanly`() = runBlocking {
+    fun `a null master wallet address, callback url and label decode cleanly`() = runBlocking {
         enqueue(
             """
             {
@@ -207,28 +274,54 @@ class WalletsServiceTest {
               "chain_family": "EVM",
               "frozen": false,
               "master_wallet_address": null,
-              "callback_url": null
+              "callback_url": null,
+              "label": null
             }
             """.trimIndent(),
         )
 
         val out = client.wallets.rebindMaster("0xdead", "0xbeef")
 
-        // Both keys are always present and null when there is no value - never absent,
-        // never an empty string. A null has to read as "no value", not blow up.
+        // All three keys are always present and null when there is no value - never
+        // absent, never an empty string. A null has to read as "no value", not blow up.
         assertEquals(WalletType.MASTER, out.type)
         assertEquals("0xbeef", out.address)
         assertEquals(ChainFamily.EVM, out.chainFamily)
         assertFalse(out.frozen)
         assertNull(out.masterWalletAddress)
         assertNull(out.callbackUrl)
+        assertNull(out.label)
+    }
+
+    @Test
+    fun `the label rides along on info and on the list`() = runBlocking {
+        enqueue(staticWalletBody)
+        enqueue(
+            """
+            {
+              "items": [
+                {"type":"master","address":"0xbeef","chain_family":"EVM","frozen":false,
+                 "master_wallet_address":null,"callback_url":null,"label":"treasury"},
+                {"type":"static","address":"0xcafe","chain_family":"EVM","frozen":false,
+                 "master_wallet_address":"0xbeef","callback_url":null,"label":null}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals("shop-42 checkout", client.wallets.info("0xdead").label)
+
+        val items = client.wallets.list().items
+        assertEquals("treasury", items[0].label)
+        // An unnamed wallet in a list is null, and reads as one without a special case.
+        assertNull(items[1].label)
     }
 
     @Test
     fun `a transit wallet decodes with a master and no callback`() = runBlocking {
         enqueue(
             """{"type":"transit","address":"0xcafe","chain_family":"EVM","frozen":true,
-               "master_wallet_address":"0xbeef","callback_url":null}""".trimIndent(),
+               "master_wallet_address":"0xbeef","callback_url":null,"label":"hot transit"}""".trimIndent(),
         )
 
         val out = client.wallets.setCallbackUrl("0xcafe", "https://ignored")
@@ -236,6 +329,7 @@ class WalletsServiceTest {
         assertEquals(WalletType.TRANSIT, out.type)
         assertTrue(out.frozen)
         assertEquals("0xbeef", out.masterWalletAddress)
+        assertEquals("hot transit", out.label)
         // A transit wallet has no per-deposit callback: always null.
         assertNull(out.callbackUrl)
     }
