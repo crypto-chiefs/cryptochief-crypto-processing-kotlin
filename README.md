@@ -12,7 +12,7 @@ Kotlin / JVM SDK for the [Crypto Chief](https://crypto-chief.com/processing/) cr
 
 ```kotlin
 dependencies {
-    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.6.0")
+    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.7.0")
 }
 ```
 
@@ -20,7 +20,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.6.0'
+    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.7.0'
 }
 ```
 
@@ -30,7 +30,7 @@ dependencies {
 <dependency>
   <groupId>com.crypto-chief</groupId>
   <artifactId>cryptochief-crypto-processing-kotlin</artifactId>
-  <version>0.6.0</version>
+  <version>0.7.0</version>
 </dependency>
 ```
 
@@ -86,12 +86,12 @@ fun main() = runBlocking {
 | `client.payouts` | estimate, execute, info, history, batchEstimate, batchExecute |
 | `client.transactions` | sign, execute, info, history + EVM/TRON/Solana/TON helpers |
 | `client.payIns` | create, info, history, cancel, selectAsset, resetAsset |
-| `client.wallets` | generate, list, info, freeze, rebindMaster, setCallbackUrl, clearCallbackUrl, setLabel, clearLabel, decryptPrivateKey |
+| `client.wallets` | generate, list, info, history, freeze, rebindMaster, setCallbackUrl, clearCallbackUrl, setLabel, clearLabel, decryptPrivateKey |
 | `client.sweeps` | force, history, walletHistory, settings, updateSettings |
 | `client.withdrawals` | info, history |
 | `client.staticDeposits` | info, history |
-| `client.blockchain` | contractsAvailable, walletBalance, transactionStatus |
-| `client.currencies` | fiatToCrypto, cryptoToFiat |
+| `client.blockchain` | contractsAvailable, contractsList, blockchainsList, walletBalance, transactionStatus |
+| `client.currencies` | fiatToCrypto, cryptoToFiat, fiats, cryptos |
 | `client.credits` | balance, topup |
 
 ## Invoices (PayIn)
@@ -201,6 +201,30 @@ name is cleared. Afterwards the wallet reads back with `label` `null`, not `""`.
 Every wallet type can be renamed, unlike a callback URL: a label names the wallet, it does
 not describe its role. Capped at 255 characters, longer refused with `LABEL_TOO_LONG`.
 
+### Every pay-in that used one deposit address
+
+```kotlin
+import com.cryptochief.processing.models.WalletHistoryQuery
+
+val page = client.wallets.history(
+    WalletHistoryQuery(
+        address   = depositAddress,
+        dateFrom  = "2026-01-01T00:00:00+00:00",   // optional
+        dateTo    = "2026-02-01T00:00:00+00:00",   // optional
+        page      = 1,                             // default 1
+        pageSize  = 50,                            // default 20, max 100
+    ),
+)
+page.items.forEach { println("${it.orderId} → ${it.status}") }
+```
+
+The same records `client.payIns.history()` returns, in the same `PayInHistoryResponse`
+shape, narrowed to one address — for when a payer says they sent funds and you have the
+address but not the order. A deposit wallet serves several orders over its lifetime.
+
+The address is matched case-insensitively, so either spelling of an EVM address works, and
+an address that is not your project's yields an empty page rather than an error.
+
 ## Auto-sweep settings
 
 A deposit wallet is swept to your master wallet on a policy: as soon as funds arrive, once
@@ -221,13 +245,122 @@ wallet decides for itself) and `projectDefault` (what it falls back to) — beca
 three together say whether a value is yours or inherited.
 
 Inheritance is per field: writing the mode leaves the fee mode inherited. `null` leaves a
-field alone, `SweepFieldWrite.Inherit` stops overriding it.
+field alone, `SweepFieldWrite.Inherit` stops overriding it. The four writable fields —
+the names that reach the wire's `fields` mask — are `type_work`, `threshold_amount_usd`,
+`fee_mode` and `gas_source`.
+
+`feeMode` decides who covers a **shortfall** of gas. A deposit wallet already holding
+enough of the chain's native coin pays for its own transfer whatever the mode says; these
+three only answer where the difference comes from when it does not.
+
+| `SweepFeeMode` | Where the shortfall comes from |
+| -------------- | ------------------------------ |
+| `CLIENT` | Your own master wallet. |
+| `SERVICE` | The platform supplies it, and **bills the cost to your API credits**. |
+| `MIX` | **The default.** `CLIENT` first, falling back to `SERVICE` when the master wallet cannot cover it. |
+
+### Who pays for TRON energy: `gas_source`
+
+`gasSource` answers *what is bought* for the transfer, where `feeMode` answers *who covers
+its network fees*. TRON only; every other chain carries the value and ignores it.
+
+| `SweepGasSource` | What happens |
+| ---------------- | ------------ |
+| `NATIVE` | The wallet burns its own TRX for energy. |
+| `RENTED` | **The platform default.** The platform supplies the energy, and bills it to your API credits. |
+
+> **Not setting it is not the same as setting `NATIVE`.** A wallet that has never chosen a
+> gas source gets `rented` — so energy is supplied, and billed to your credits, without
+> anybody having switched it on. To have the wallet burn its own TRX, send `NATIVE`
+> explicitly.
+
+```kotlin
+import com.cryptochief.processing.models.SweepGasSource
+
+val s = client.sweeps.updateSettings(
+    address     = depositAddress,
+    networkCode = Chain.TRON_MAINNET,
+    gasSource   = SweepFieldWrite.Set(SweepGasSource.NATIVE),
+)
+println(s.effective.gasSource)   // what will actually happen: always concrete
+println(s.override?.gasSource)   // null = this wallet does not decide it
+```
+
+`effective.gasSource` is always a concrete value — read that one to see what will happen.
+A `null` on `override` means only that this layer does not decide it: the value is
+inherited, **not** switched off. `SweepFieldWrite.Inherit` drops the wallet's own choice
+and puts it back to inheriting.
+
+### Sweep history
+
+```kotlin
+val page = client.sweeps.history(
+    SweepHistoryQuery(
+        status = SweepStatus.FAILED,          // optional: one status
+        search = "0x77EDde",                  // optional: substring
+        mode   = SweepMode.AUTO,
+    ),
+)
+```
+
+`status` narrows to a single status; left out, every status comes back — `skipped` among
+them, which is a normal outcome (a balance below the wallet's threshold), not a failure.
+`search` matches the wallet address, the sweep or gas-pump transaction hash and the task
+id; on `walletHistory` the address is already fixed, so it matches the hashes and the task
+id only.
 
 A sweep is broadcast first and confirmed after: `SweepStatus.BROADCASTED` means the
 transaction is out and not yet confirmed, `SweepStatus.COMPLETED` means confirmed, with
-`sweepConfirmations` and `completedAt` filled in. Earlier platform versions reported
-`completed` at broadcast, so a sweep could read as settled while its transaction was still
-unconfirmed.
+`sweepConfirmations` filled in. Earlier platform versions reported `completed` at
+broadcast, so a sweep could read as settled while its transaction was still unconfirmed.
+
+> **`completedAt` is not proof the sweep settled.** The sweeper stamps it at every terminal
+> outcome, failures included — a `failed` sweep is no more in flight than a `completed`
+> one, so it carries a time too. What says the funds moved is `sweepConfirmations` above
+> zero, or `confirmedAt` off the `sweep.confirmed` webhook, which exists as a separate
+> field for exactly this reason.
+
+## Blockchain data
+
+```kotlin
+// Chains the platform's scanner is connected to right now. A bare JSON array.
+client.blockchain.blockchainsList().forEach { println("${it.name} (${it.type})") }
+
+// Every asset the platform supports, whatever this project has enabled.
+val catalogue = client.blockchain.contractsList()
+
+// What THIS project can be paid in right now - the list orders, sweeps and payouts obey.
+val enabled = client.blockchain.contractsAvailable(Chain.ETH_SEPOLIA)
+```
+
+Both catalogues answer the same item type, `chainFamily` and `isTest` included; `contract`
+is an empty string on a native coin, never `null`. `SupportedBlockchain.type` is the
+scanner's lower-case protocol family (`evm`, `tron`), unlike the upper-case `chain_family`
+carried everywhere else — the two are not the same value.
+
+## Currency lists
+
+```kotlin
+// Every fiat the platform can price an order in. Another bare JSON array.
+client.currencies.fiats().forEach { println("${it.code} — ${it.name}") }  // SEK — Swedish Krona
+
+// Every crypto ticker it has a rate for, against USDT, by exchange.
+val rates = client.currencies.cryptos()
+println("${rates.count} tickers against ${rates.quote}")
+println(rates.byExchange["binance"]?.size)
+```
+
+`fiats()` gives the codes `CreatePayInRequest.currency` and the two convert calls accept.
+`cryptos()` is **rate availability only** — a ticker there is one the platform can put a
+price on, not one your project can be paid in. That list stays
+`client.blockchain.contractsAvailable()`; a picker built from `cryptos()` offers assets the
+order will be refused for.
+
+`fiats()`, `cryptos()` and `blockchainsList()` are built from Go slices and maps upstream,
+so "nothing to list" reaches the wire as a literal `null` rather than as `[]`. All three
+read that as empty — an empty list, or an empty `CryptoCurrencies` — and so does a `null`
+standing in for one exchange's tickers inside `byExchange`. A method promising a list
+answers with one.
 
 ## Contract calls
 

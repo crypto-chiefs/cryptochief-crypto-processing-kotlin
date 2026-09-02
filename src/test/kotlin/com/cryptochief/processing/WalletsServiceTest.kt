@@ -1,10 +1,15 @@
 package com.cryptochief.processing
 
 import com.cryptochief.processing.models.GenerateWalletRequest
+import com.cryptochief.processing.models.PayIn
+import com.cryptochief.processing.models.PayInHistoryResponse
+import com.cryptochief.processing.models.PayInStatus
+import com.cryptochief.processing.models.WalletHistoryQuery
 import com.cryptochief.processing.models.WalletType
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -260,6 +265,85 @@ class WalletsServiceTest {
         val body = taken().json()
         assertEquals("", body["callback_url"]?.jsonPrimitive?.content)
         assertEquals(setOf("address", "callback_url"), body.keys)
+    }
+
+    // ---- pay-in history for one deposit address -------------------------------------
+
+    @Test
+    fun `history posts the address with the optional window and page`() = runBlocking {
+        enqueue("""{"items":[],"meta":{"page":2,"page_size":50,"total":0}}""")
+
+        val out = client.wallets.history(
+            WalletHistoryQuery(
+                address = "0x77EDde3213b70c9dd224C874c28f41B23B070f65",
+                dateFrom = "2026-01-01T00:00:00+00:00",
+                dateTo = "2026-02-01T00:00:00+00:00",
+                page = 2,
+                pageSize = 50,
+            ),
+        )
+
+        val req = taken()
+        assertEquals("/v1/wallets/history", req.path)
+        val body = req.json()
+        assertEquals("0x77EDde3213b70c9dd224C874c28f41B23B070f65", body["address"]?.jsonPrimitive?.content)
+        assertEquals("2026-01-01T00:00:00+00:00", body["date_from"]?.jsonPrimitive?.content)
+        assertEquals("2026-02-01T00:00:00+00:00", body["date_to"]?.jsonPrimitive?.content)
+        assertEquals(2, body["page"]?.jsonPrimitive?.int)
+        assertEquals(50, body["page_size"]?.jsonPrimitive?.int)
+        // An address you do not own is an empty page, not an error - so an empty items
+        // list has to read as a normal answer.
+        assertTrue(out.items.isEmpty())
+        assertEquals(2, out.meta.page)
+        assertEquals(0, out.meta.total)
+    }
+
+    @Test
+    fun `history omits the window when it was not asked for`() = runBlocking {
+        enqueue("""{"items":[],"meta":{"page":1,"page_size":20,"total":0}}""")
+
+        client.wallets.history(WalletHistoryQuery(address = "0xdead"))
+
+        // The dates are optional; an empty string is a value the endpoint would have to
+        // reject, not the "no window" the caller meant.
+        assertEquals(setOf("address"), taken().json().keys)
+    }
+
+    @Test
+    fun `history answers in the same shape as pay-in history`() = runBlocking {
+        // Same records as /v1/payments/history, narrowed to one address - so they decode
+        // into the very same order type, not a parallel one.
+        val order = """
+            {
+              "type": "PayIn",
+              "uuid": "0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+              "order_id": "invoice-1002",
+              "user_id": "user-777",
+              "status": "paid",
+              "mode": "crypto",
+              "amount_crypto": "10.5",
+              "payment_coin": "USDT",
+              "payment_network": "TRON_MAINNET",
+              "to_address": "TQrY8bYc2yQ8sM8nJ1sZ9c2Zx7L2wq7pQb",
+              "created_at": "2026-01-20T02:55:49.976372Z"
+            }
+        """.trimIndent()
+        enqueue("""{"items":[$order],"meta":{"page":1,"page_size":20,"total":1}}""")
+
+        val out: PayInHistoryResponse = client.wallets.history(
+            WalletHistoryQuery(address = "TQrY8bYc2yQ8sM8nJ1sZ9c2Zx7L2wq7pQb"),
+        )
+
+        val payIn: PayIn = out.items.single()
+        assertEquals("invoice-1002", payIn.orderId)
+        assertEquals(PayInStatus.PAID, payIn.status)
+        assertTrue(payIn.succeeded)
+        assertTrue(payIn.isTerminal)
+        assertEquals("10.5", payIn.amountCrypto)
+        assertEquals("USDT", payIn.paymentCoin)
+        assertEquals(Chain.TRON_MAINNET, payIn.paymentNetwork)
+        assertEquals("TQrY8bYc2yQ8sM8nJ1sZ9c2Zx7L2wq7pQb", payIn.toAddress)
+        assertEquals(1, out.meta.total)
     }
 
     // ---- the wallet-info response shape --------------------------------------------

@@ -12,7 +12,7 @@ plugins {
 }
 
 group = "com.crypto-chief"
-version = "0.6.0"
+version = "0.7.0"
 
 description = "Kotlin SDK for the Crypto Chief crypto-processing API."
 

@@ -36,6 +36,28 @@ public data class GenerateWalletRequest(
     @SerialName("label") val label: String? = null,
 )
 
+/**
+ * Every pay-in that used one deposit address — the same records
+ * [com.cryptochief.processing.services.PayInsService.history] returns, narrowed to a
+ * single wallet, and answered in the same [PayInHistoryResponse] shape.
+ *
+ * [address] is matched case-insensitively, so either spelling of an EVM address works.
+ * Only this project's orders come back: an address you do not own yields an empty page
+ * rather than an error.
+ */
+@Serializable
+public data class WalletHistoryQuery(
+    @SerialName("address") val address: String,
+    /** Creation date, from. `YYYY-MM-DDTHH:MM:SS±HH:MM`. */
+    @SerialName("date_from") val dateFrom: String? = null,
+    /** Creation date, to. Same format as [dateFrom]. */
+    @SerialName("date_to") val dateTo: String? = null,
+    /** Default 1. */
+    @SerialName("page") val page: Int? = null,
+    /** Default 20, maximum 100. */
+    @SerialName("page_size") val pageSize: Int? = null,
+)
+
 @Serializable
 public data class WalletCoinBalance(
     @SerialName("address") val address: String,

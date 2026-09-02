@@ -24,6 +24,17 @@ public class SweepsService internal constructor(private val transport: HttpTrans
             body = ForceSweepRequest(address, network),
         )
 
+    /**
+     * Sweep operations across the whole project, automatic and forced alike.
+     *
+     * [SweepHistoryQuery.status] narrows to one status — left out, every status comes
+     * back, `skipped` among them — and [SweepHistoryQuery.search] is a substring match on
+     * the wallet address, the sweep or gas-pump transaction hash, and the task id.
+     *
+     * Do not poll this to learn that a sweep settled: the sweep webhook fires the moment
+     * one is confirmed on chain. This is for reconciliation, and for watching a sweep
+     * that is still in flight.
+     */
     public suspend fun history(query: SweepHistoryQuery = SweepHistoryQuery()): SweepHistoryResponse =
         transport.send(
             path = "/v1/sweeps/history",
@@ -32,6 +43,10 @@ public class SweepsService internal constructor(private val transport: HttpTrans
             body = query,
         )
 
+    /**
+     * [history] for one wallet. Same filters, except that [SweepWalletHistoryQuery.search]
+     * matches only the transaction hashes and the task id — the address is already fixed.
+     */
     public suspend fun walletHistory(query: SweepWalletHistoryQuery): SweepHistoryResponse =
         transport.send(
             path = "/v1/sweeps/wallet/history",
@@ -61,7 +76,20 @@ public class SweepsService internal constructor(private val transport: HttpTrans
      *
      * A `null` argument leaves that field alone; [SweepFieldWrite.Inherit] stops
      * overriding it. Inheritance is per field, so writing the mode leaves the fee mode as
-     * it was.
+     * it was. The four writable fields — the names that reach the wire's `fields` mask —
+     * are `type_work`, `threshold_amount_usd`, `fee_mode` and `gas_source`.
+     *
+     * [feeMode] takes a [com.cryptochief.processing.models.SweepFeeMode] value and decides
+     * only who covers a **shortfall** of gas — a deposit wallet holding enough native coin
+     * pays for its own transfer in every mode. `service` has the platform supply it and
+     * bills the cost to your API credits; `mix`, the default, tries the master wallet first
+     * and falls back to `service`.
+     *
+     * [gasSource] takes a [com.cryptochief.processing.models.SweepGasSource] value and is
+     * TRON-only; other chains carry it and ignore it. Leaving it `null` here leaves the
+     * stored value untouched — which is **not** the same as choosing `native`: a wallet
+     * that never chose one gets the platform default, `rented`, so energy is supplied and
+     * billed to your API credits without anybody having switched it on.
      *
      * Refusals are named: `TYPE_WORK_INVALID`, `FEE_MODE_INVALID`, `THRESHOLD_INVALID`,
      * `THRESHOLD_MUST_BE_POSITIVE`, `THRESHOLD_REQUIRED_FOR_THRESHOLD_MODE`, and
@@ -73,6 +101,7 @@ public class SweepsService internal constructor(private val transport: HttpTrans
         thresholdAmountUsd: SweepFieldWrite? = null,
         feeMode: SweepFieldWrite? = null,
         networkCode: Chain? = null,
+        gasSource: SweepFieldWrite? = null,
     ): SweepSettings {
         val fields = mutableListOf<String>()
         fun named(wireName: String, write: SweepFieldWrite?): String? {
@@ -84,6 +113,7 @@ public class SweepsService internal constructor(private val transport: HttpTrans
         val typeWorkValue = named("type_work", typeWork)
         val thresholdValue = named("threshold_amount_usd", thresholdAmountUsd)
         val feeModeValue = named("fee_mode", feeMode)
+        val gasSourceValue = named("gas_source", gasSource)
 
         return transport.send(
             path = "/v1/sweeps/settings/update",
@@ -96,6 +126,7 @@ public class SweepsService internal constructor(private val transport: HttpTrans
                 typeWork = typeWorkValue,
                 thresholdAmountUsd = thresholdValue,
                 feeMode = feeModeValue,
+                gasSource = gasSourceValue,
             ),
         )
     }

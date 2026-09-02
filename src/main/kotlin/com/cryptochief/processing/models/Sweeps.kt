@@ -46,8 +46,19 @@ public object SweepPolicyMode {
 }
 
 /**
- * Who pays the gas for a sweep: [CLIENT] the swept wallet itself, [SERVICE] the platform's
- * service wallet, [MIX] the service wallet with the cost reclaimed from the sweep.
+ * Who covers a **shortfall** of gas on a sweep.
+ *
+ * A deposit wallet already holding enough of the chain's native coin pays for its own
+ * transfer, whatever the mode says. These three only decide where the difference comes from
+ * when it does not:
+ *
+ * - [CLIENT]: your own master wallet.
+ * - [SERVICE]: the platform supplies it, and **the cost is billed to your API credits**.
+ * - [MIX]: the default. [CLIENT] first, falling back to [SERVICE] when the master wallet
+ *   cannot cover it.
+ *
+ * None of this is the TRON energy question, which [SweepGasSource] answers and which is
+ * billed to your credits in every one of these modes.
  */
 public object SweepFeeMode {
     public const val CLIENT: String = "client"
@@ -55,11 +66,42 @@ public object SweepFeeMode {
     public const val MIX: String = "mix"
 }
 
+/**
+ * What is bought to move the funds, where [SweepFeeMode] answers who pays the network
+ * fee. The two are independent: energy can be supplied under any fee mode, and it is
+ * billed to your API credits whichever one you chose. TRON only — every other chain
+ * carries the value and ignores it.
+ *
+ * - [NATIVE]: the wallet burns its own TRX for energy.
+ * - [RENTED]: the platform supplies the energy for the transfer, so nothing is burnt.
+ *
+ * **Not setting it is not the same as setting [NATIVE].** A wallet that has never chosen
+ * one gets the platform default, which is [RENTED] — so energy is supplied, and billed to
+ * your credits, without anybody having switched it on. To have the wallet burn its own
+ * TRX, send [NATIVE] explicitly. Read [SweepPolicy.gasSource] on
+ * [SweepSettings.effective] to see what will actually happen.
+ */
+public object SweepGasSource {
+    public const val NATIVE: String = "native"
+    public const val RENTED: String = "rented"
+}
+
 @Serializable
 public data class SweepHistoryQuery(
     @SerialName("mode") val mode: String? = null,
     @SerialName("page") val page: Int? = null,
     @SerialName("page_size") val pageSize: Int? = null,
+    /**
+     * One [SweepStatus]. Left null every status is included, `skipped` among them — so
+     * this is how you ask for the failures alone, or leave out the sweeps the platform
+     * decided against.
+     */
+    @SerialName("status") val status: String? = null,
+    /**
+     * Substring match on the wallet address, the sweep or gas-pump transaction hash, and
+     * the `task_id`.
+     */
+    @SerialName("search") val search: String? = null,
 )
 
 @Serializable
@@ -68,6 +110,14 @@ public data class SweepWalletHistoryQuery(
     @SerialName("mode") val mode: String? = null,
     @SerialName("page") val page: Int? = null,
     @SerialName("page_size") val pageSize: Int? = null,
+    /** One [SweepStatus]; see [SweepHistoryQuery.status]. */
+    @SerialName("status") val status: String? = null,
+    /**
+     * Substring match on the sweep or gas-pump transaction hash and the `task_id`. The
+     * wallet is already fixed by [address], so unlike [SweepHistoryQuery.search] this one
+     * does not match addresses.
+     */
+    @SerialName("search") val search: String? = null,
 )
 
 @Serializable
@@ -86,9 +136,18 @@ public data class Sweep(
     /** What triggered this sweep: momentum, threshold or force. */
     @SerialName("type_work") val typeWork: String? = null,
     /**
-     * Confirmations seen on the sweep transaction, and when it reached the network's
-     * confirmation target. Read them with [status]: [completedAt] is absent while the
-     * sweep is still in flight.
+     * Confirmations seen on the sweep transaction, and when the platform stopped working on
+     * the task.
+     *
+     * **[completedAt] is not proof the sweep settled.** The sweeper stamps it at every
+     * terminal outcome, failures included — a `failed` sweep is no more in flight than a
+     * `completed` one, so it carries a time too. Read its presence as settlement and a
+     * failed sweep books as money received.
+     *
+     * What settlement looks like: [sweepConfirmations] above zero (with [status]
+     * [SweepStatus.COMPLETED]). Or take `confirmed_at` off the `sweep.confirmed` webhook —
+     * [com.cryptochief.processing.webhook.SweepWebhookEvent.confirmedAt], which exists as a
+     * separate field for exactly this reason.
      */
     @SerialName("sweep_confirmations") val sweepConfirmations: Int? = null,
     @SerialName("completed_at") val completedAt: String? = null,
@@ -129,12 +188,20 @@ public data class SweepPolicy(
     @SerialName("type_work") val typeWork: String = "",
     /** Meaningful only when [typeWork] is [SweepPolicyMode.THRESHOLD]. */
     @SerialName("threshold_amount_usd") val thresholdAmountUsd: String? = null,
+    /** One of the [SweepFeeMode] constants — who covers a shortfall of gas, not who is charged. */
     @SerialName("fee_mode") val feeMode: String = "",
     /**
      * Which layer the mode came from: `wallet_network`, `wallet`, `project` or `default`.
      * Present on [SweepSettings.effective], where the question arises.
      */
     @SerialName("source") val source: String? = null,
+    /**
+     * One of the [SweepGasSource] constants. On [SweepSettings.effective] this is always a
+     * concrete value — read it to see what will actually happen, since a wallet that never
+     * chose one gets the platform default, `rented`, and has its energy billed to your API
+     * credits. TRON only.
+     */
+    @SerialName("gas_source") val gasSource: String = "",
 )
 
 /**
@@ -150,6 +217,7 @@ public data class SweepOverride(
     @SerialName("network_code") val networkCode: String? = null,
     @SerialName("type_work") val typeWork: String? = null,
     @SerialName("threshold_amount_usd") val thresholdAmountUsd: String? = null,
+    /** One of the [SweepFeeMode] constants, or `null` where this layer does not decide it. */
     @SerialName("fee_mode") val feeMode: String? = null,
     /** Who wrote it: `merchant` or `operator`. */
     @SerialName("source") val source: String? = null,
@@ -158,6 +226,13 @@ public data class SweepOverride(
      * `SWEEP_SETTINGS_LOCKED` and changes nothing.
      */
     @SerialName("locked") val locked: Boolean = false,
+    /**
+     * One of the [SweepGasSource] constants, or `null` — which says this layer does not
+     * decide it, so the value is **inherited, not switched off**. A wallet inheriting it
+     * still gets the platform default, `rented`, with the energy billed to your API
+     * credits: `null` here and `native` are different answers.
+     */
+    @SerialName("gas_source") val gasSource: String? = null,
 )
 
 /**
@@ -205,6 +280,7 @@ internal data class SweepSettingsUpdateRequest(
     @SerialName("type_work") val typeWork: String? = null,
     @SerialName("threshold_amount_usd") val thresholdAmountUsd: String? = null,
     @SerialName("fee_mode") val feeMode: String? = null,
+    @SerialName("gas_source") val gasSource: String? = null,
 )
 
 @Serializable

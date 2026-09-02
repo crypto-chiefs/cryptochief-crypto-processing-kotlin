@@ -6,10 +6,12 @@ import com.cryptochief.processing.http.HttpTransport
 import com.cryptochief.processing.models.AddressRequest
 import com.cryptochief.processing.models.GenerateWalletRequest
 import com.cryptochief.processing.models.ListWalletsResponse
+import com.cryptochief.processing.models.PayInHistoryResponse
 import com.cryptochief.processing.models.RebindMasterRequest
 import com.cryptochief.processing.models.SetCallbackUrlRequest
 import com.cryptochief.processing.models.SetLabelRequest
 import com.cryptochief.processing.models.Wallet
+import com.cryptochief.processing.models.WalletHistoryQuery
 import com.cryptochief.processing.rsa.RsaDecrypt
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.serializer
@@ -42,6 +44,27 @@ public class WalletsService internal constructor(
             requestSerializer = serializer<AddressRequest>(),
             responseSerializer = serializer(),
             body = AddressRequest(address),
+        )
+
+    /**
+     * Every pay-in that used one deposit address, newest page first — the same records
+     * [com.cryptochief.processing.services.PayInsService.history] returns, narrowed to a
+     * single wallet, and in the same [PayInHistoryResponse] shape.
+     *
+     * What it is for: a payer says they sent funds and you have the address but not the
+     * order. A deposit wallet serves several orders over its lifetime, and this is the
+     * list of them.
+     *
+     * The address is matched case-insensitively, so either spelling of an EVM address
+     * works, and only this project's orders come back — an address that is not yours
+     * yields an empty page rather than an error.
+     */
+    public suspend fun history(query: WalletHistoryQuery): PayInHistoryResponse =
+        transport.send(
+            path = "/v1/wallets/history",
+            requestSerializer = serializer(),
+            responseSerializer = serializer(),
+            body = query,
         )
 
     public suspend fun freeze(address: String): Wallet =
