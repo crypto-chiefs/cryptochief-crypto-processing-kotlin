@@ -6,7 +6,24 @@ public sealed class CryptoChiefException(
     cause: Throwable? = null,
 ) : RuntimeException(message, cause)
 
-/** Server returned a non-2xx response with a structured error envelope. */
+/**
+ * Server returned a non-2xx response with a structured error envelope.
+ *
+ * A refusal arrives as `{"ok":false,"error":...,"msg":...}` in one of two shapes: the
+ * gateway's own checks put the machine code in `error` and an English sentence in `msg`,
+ * while refusals relayed from an upstream service put the generic `SERVICE_ERROR` in
+ * `error` and the machine code in `msg`. The SDK folds both into [code], so callers
+ * switch on one field and never have to test which shape they got.
+ *
+ * @property code the machine-readable code, and the one to branch on — `error` unless it
+ *   is absent or `SERVICE_ERROR`, in which case `msg`; `HTTP_<status>` if the body carried
+ *   neither. The constants in [ErrorCode] cover the codes the gateway itself raises.
+ * @property status the HTTP status code.
+ * @property description the human-readable half — the sentence from `msg` when the
+ *   envelope carried one alongside a distinct code, otherwise the code itself. Display it;
+ *   do not branch on it.
+ * @property raw the response body, verbatim, truncated at 8 KiB.
+ */
 public class ApiException(
     public val code: String,
     public val status: Int,

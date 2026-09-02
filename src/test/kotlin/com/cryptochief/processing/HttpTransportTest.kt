@@ -94,6 +94,47 @@ class HttpTransportTest {
     }
 
     @Test
+    fun `gateway envelope resolves the code from error and keeps the sentence`() = runBlocking {
+        val body = """{"ok":false,"error":"LABEL_TOO_LONG","msg":"label is longer than 255 characters"}"""
+        server.enqueue(MockResponse().setResponseCode(400).setBody(body))
+        val ex = assertThrows<ApiException> { runBlocking { client.payouts.info("a") } }
+
+        // The machine code is the one the gateway put in `error`, not the English sentence.
+        assertEquals(ErrorCode.LABEL_TOO_LONG, ex.code)
+        // The sentence survives as the human-readable half.
+        assertEquals("label is longer than 255 characters", ex.description)
+        assertTrue(ex.message!!.contains("label is longer than 255 characters"))
+        // Nothing is lost: the raw body is kept whole.
+        assertEquals(body, ex.raw)
+    }
+
+    @Test
+    fun `a when over ErrorCode constants matches a gateway refusal`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(400)
+                .setBody("""{"ok":false,"error":"LABEL_TOO_LONG","msg":"label is longer than 255 characters"}"""),
+        )
+        val ex = assertThrows<ApiException> { runBlocking { client.payouts.info("a") } }
+
+        val matched = when (ex.code) {
+            ErrorCode.LABEL_TOO_LONG -> true
+            else -> false
+        }
+        assertTrue(matched, "ErrorCode.LABEL_TOO_LONG must match a gateway refusal, got code=${ex.code}")
+    }
+
+    @Test
+    fun `upstream envelope still resolves the code from msg`() = runBlocking {
+        val body = """{"ok":false,"error":"SERVICE_ERROR","msg":"wallet_not_found"}"""
+        server.enqueue(MockResponse().setResponseCode(400).setBody(body))
+        val ex = assertThrows<ApiException> { runBlocking { client.payouts.info("a") } }
+
+        assertEquals("wallet_not_found", ex.code)
+        assertEquals("wallet_not_found", ex.description)
+        assertEquals(body, ex.raw)
+    }
+
+    @Test
     fun `retry budget exhausted surfaces last error`() = runBlocking {
         repeat(3) {
             server.enqueue(MockResponse().setResponseCode(502).setBody("""{"error":"SERVICE_ERROR","msg":"bad gateway"}"""))
