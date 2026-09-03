@@ -99,4 +99,15 @@ public object ErrorCode {
     public const val CALLS_NOT_ALLOWED_FOR_TRANSFER: String = "CALLS_NOT_ALLOWED_FOR_TRANSFER"
     public const val CONTRACT_CALLS_UNSUPPORTED_ON_NETWORK: String = "CONTRACT_CALLS_UNSUPPORTED_ON_NETWORK"
     public const val NETWORK_ERROR: String = "NETWORK_ERROR"
+
+    /** The object does not exist OR is not this project's — deliberately indistinguishable. */
+    public const val NOT_FOUND: String = "NOT_FOUND"
+    /** Webhook resend: a newer event exists for the same object; only the latest may be resent. Permanent. */
+    public const val DELIVERY_SUPERSEDED: String = "DELIVERY_SUPERSEDED"
+    /** Webhook resend: a worker holds the delivery, or it is already scheduled for a retry. */
+    public const val DELIVERY_IN_FLIGHT: String = "DELIVERY_IN_FLIGHT"
+    /** Webhook resend: resent under a minute ago (HTTP 429, Retry-After). */
+    public const val RESEND_TOO_SOON: String = "RESEND_TOO_SOON"
+    /** Static-deposit resend: no webhook was ever queued — the wallet had no callback_url. */
+    public const val NO_DELIVERIES: String = "NO_DELIVERIES"
 }
