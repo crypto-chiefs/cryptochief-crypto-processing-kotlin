@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.0] — 2026-09-15
+
+- **Breaking:** the payout fields below became nullable, `PollOptions.timeout` became `Duration?`, and the constructors of the changed data classes gained parameters; source- and binary-incompatible
+- `payouts.info()`, `history()`, `execute()` and `estimate()` no longer throw `DecodeException`
+- `PayoutInfo`: added `amountRequested`, `amountToReceive`, `feeInfo`, `serviceOperations` (`PayoutServiceOperation`), `confirmations` (lowest among `sources`), `requiredConfirmations`, `userId`, `completedAt`
+- `PayoutInfo`: `network`, `coin`, `amount` are nullable; they and `txid`, `urlCallback`, `updatedAt`, `error` are `@Deprecated` and always `null`; use `amountRequested`, `sources[].network`/`coin`/`txid`, `completedAt`
+- `PayoutSource`: added `amountCrypto`, `network`, `txid`, `confirmations`, `needRefuel`, `refuelAmount`, `estimatedFee`, `estimatedFeeFiat`, `feePaid`, `feePaidFiat`; `amount` is nullable and `@Deprecated`, use `amountCrypto`
+- `EstimatePayoutResponse`: added `amountRequested`, `serviceOperations`, `coins` (`PayoutCoinBalance`); `network`, `coin`, `amount` are nullable and `@Deprecated`; `autoConvertApplied` is `@Deprecated`
+- `PayoutFeeInfo`: added `limitFiat`, `limitCurrency`, `totalFeePaidFiat`; `estimatedFiat` and `estimatedCoin` are nullable; `estimatedCoin` and `estimatedAsset` are `@Deprecated`
+- `PayoutStatus.REFUELING`, `REFUEL_CONFIRMED`, `SENDING`, `BROADCASTING`, `IN_MEMPOOL`, `CONFIRM_CHECK`; `PROCESS`, `FAILED`, `EXPIRED` and `CANCEL` are not returned by the API
+- `confirmations` and `requiredConfirmations` on `TransactionInfo`, `TransactionWebhookEvent`, `PayoutWebhookEvent`; `requiredConfirmations` on `Sweep` and `SweepWebhookEvent`. A transaction becomes `confirmed`, a payout `paid`, a withdrawal `completed` when the count reaches `requiredConfirmations`
+- `Sweep.isSettled`: `status` is `completed` and `sweepConfirmations` is at least `requiredConfirmations`; use it instead of `sweepConfirmations > 0`
+- `Sweep.completedAt` is the send time; for `failed` and `skipped`, the time that status was set
+- `WithdrawalStatus`; `Withdrawal.isTerminal` and `succeeded`
+- `Withdrawal`: added `errorReason`, `completedAt`, `confirmations`, `requiredConfirmations`, `needRefuel`, `refuelTxHash`, `refuelStatus`, `estimatedFeeFiat`, `actualFeeFiat`, `feeMode`; `error`, `confirmedAt`, `contract`, `amountFiat`, `updatedAt` are `@Deprecated`, use `errorReason` and `completedAt`
+- `waitForPayout` default timeout is 90 minutes (`PollOptions.PAYOUT_TIMEOUT`); `waitForTransaction` and `waitForPayIn` stay at 10 minutes (`PollOptions.DEFAULT_TIMEOUT`)
+- `PollOptions.timeout` defaults to `null`, which applies the helper's default timeout
+
 ## [0.8.0] — 2026-09-03
 
 The platform's outbound webhooks become something you can read and re-fire, and every

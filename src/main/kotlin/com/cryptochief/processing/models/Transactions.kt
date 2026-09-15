@@ -87,6 +87,13 @@ public data class TransactionInfo(
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
     @SerialName("error") val error: String? = null,
+    /**
+     * Confirmations of the transaction. Always sent. 0 until it is in a block; grows while `broadcasted`.
+     * Decide on [status], not on this count.
+     */
+    @SerialName("confirmations") val confirmations: Int = 0,
+    /** Confirmations the network requires. Always sent. The transaction becomes `confirmed` at this count. */
+    @SerialName("required_confirmations") val requiredConfirmations: Int = 0,
 ) {
     public val isTerminal: Boolean get() = status in TxStatus.TERMINAL
     public val succeeded: Boolean get() = status == TxStatus.CONFIRMED

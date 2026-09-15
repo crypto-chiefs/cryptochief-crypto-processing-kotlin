@@ -128,9 +128,10 @@ class SweepsServiceTest {
             """
             {"items":[
               {"task_id":"t1","status":"broadcasted","wallet_address":"0xa","chain":"ETH_MAINNET",
-               "sweep_confirmations":2,"type_work":"threshold","total_fee_usd":"1.20"},
+               "sweep_confirmations":2,"required_confirmations":12,"completed_at":"2026-08-28T09:59:00Z",
+               "type_work":"threshold","total_fee_usd":"1.20"},
               {"task_id":"t2","status":"completed","wallet_address":"0xb","chain":"ETH_MAINNET",
-               "sweep_confirmations":12,"completed_at":"2026-08-28T10:00:00Z","real_sweep_fee_usd":"0.98"}
+               "sweep_confirmations":12,"required_confirmations":12,"completed_at":"2026-08-28T10:00:00Z","real_sweep_fee_usd":"0.98"}
             ],"meta":{"total":2,"page":1,"page_size":50}}
             """.trimIndent(),
         )
@@ -140,30 +141,36 @@ class SweepsServiceTest {
         val inFlight = out.items[0]
         val settled = out.items[1]
         assertEquals(SweepStatus.BROADCASTED, inFlight.status)
+        // In a block, counting, and still not final: above zero is not settlement.
         assertEquals(2, inFlight.sweepConfirmations)
-        // Still in flight: there is no settlement moment to report yet.
-        assertNull(inFlight.completedAt)
+        assertEquals(12, inFlight.requiredConfirmations)
+        assertEquals(12, settled.sweepConfirmations)
+        assertEquals(12, settled.requiredConfirmations)
+        // completed_at is the send time, so a broadcasted sweep already carries it.
+        assertEquals("2026-08-28T09:59:00Z", inFlight.completedAt)
         assertEquals("threshold", inFlight.typeWork)
         assertEquals("1.20", inFlight.totalFeeUsd)
         assertEquals(SweepStatus.COMPLETED, settled.status)
         assertEquals("2026-08-28T10:00:00Z", settled.completedAt)
         assertEquals("0.98", settled.realSweepFeeUsd)
+        assertFalse(inFlight.isSettled)
+        assertTrue(settled.isSettled)
     }
 
     @Test
     fun `a failed sweep carries completedAt too, so it is not the settlement signal`() = runBlocking {
-        // The sweeper stamps completed_at at every TERMINAL outcome, failures included -
-        // a failed sweep is no more in flight than a completed one. Reading its presence
-        // as "the funds moved" books a failure as money received.
+        // completed_at is the send time on broadcasted/completed and the time the status was
+        // recorded on failed/skipped. Reading its presence as "the funds moved" books a
+        // failure as money received.
         enqueue(
             """
             {"items":[
               {"task_id":"t3","status":"failed","wallet_address":"0xc","chain":"ETH_MAINNET",
-               "sweep_confirmations":0,"completed_at":"2026-08-28T11:00:00Z"},
+               "sweep_confirmations":0,"required_confirmations":12,"completed_at":"2026-08-28T11:00:00Z"},
               {"task_id":"t4","status":"skipped","wallet_address":"0xd","chain":"ETH_MAINNET",
                "completed_at":"2026-08-28T11:05:00Z"},
               {"task_id":"t5","status":"completed","wallet_address":"0xe","chain":"ETH_MAINNET",
-               "sweep_confirmations":19,"completed_at":"2026-08-28T11:10:00Z"}
+               "sweep_confirmations":19,"required_confirmations":12,"completed_at":"2026-08-28T11:10:00Z"}
             ],"meta":{"total":3,"page":1,"page_size":50}}
             """.trimIndent(),
         )
@@ -178,12 +185,85 @@ class SweepsServiceTest {
         val settled = items[2]
         assertEquals(SweepStatus.FAILED, failed.status)
         assertEquals(0, failed.sweepConfirmations)
-        // What actually says the funds moved: confirmations above zero on a completed
-        // sweep. The webhook's confirmedAt is the other answer.
-        assertFalse((failed.sweepConfirmations ?: 0) > 0)
+        // Settlement is isSettled: completed and the count at the depth. The webhook's
+        // confirmedAt is the other answer.
+        assertFalse(failed.isSettled)
         assertEquals(SweepStatus.SKIPPED, skipped.status)
         assertNull(skipped.sweepConfirmations)
-        assertTrue(settled.status == SweepStatus.COMPLETED && (settled.sweepConfirmations ?: 0) > 0)
+        assertFalse(skipped.isSettled)
+        assertEquals(SweepStatus.COMPLETED, settled.status)
+        assertTrue(settled.isSettled)
+    }
+
+    @Test
+    fun `an older completed row with no confirmations is not settled`() = runBlocking {
+        enqueue(
+            """
+            {"items":[
+              {"task_id":"t9","status":"completed","wallet_address":"0xh","chain":"ETH_MAINNET",
+               "sweep_tx_hash":"0xh1","sweep_confirmations":0,"required_confirmations":12,
+               "completed_at":"2026-08-20T10:00:00Z"},
+              {"task_id":"t11","status":"completed","wallet_address":"0xj","chain":"ETH_MAINNET",
+               "sweep_tx_hash":"0xj1","required_confirmations":12,
+               "completed_at":"2026-08-10T10:00:00Z"}
+            ],"meta":{"total":2,"page":1,"page_size":50}}
+            """.trimIndent(),
+        )
+
+        val items = client.sweeps.history().items
+
+        assertTrue(items.all { it.status == SweepStatus.COMPLETED })
+        assertEquals(listOf(false, false), items.map { it.isSettled })
+    }
+
+    @Test
+    fun `a broadcasted sweep with confirmations is still in flight`() = runBlocking {
+        enqueue(
+            """
+            {"items":[
+              {"task_id":"t6","status":"broadcasted","wallet_address":"0xf","chain":"ETH_MAINNET",
+               "sweep_tx_hash":"0xsweep","sweep_confirmations":3,"required_confirmations":12,
+               "completed_at":"2026-09-14T10:00:00Z"},
+              {"task_id":"t7","status":"completed","wallet_address":"So1ana","chain":"SOLANA_MAINNET",
+               "sweep_tx_hash":"5ig","sweep_confirmations":32,"required_confirmations":32,
+               "completed_at":"2026-09-14T10:01:00Z"}
+            ],"meta":{"total":2,"page":1,"page_size":50}}
+            """.trimIndent(),
+        )
+
+        val (inBlock, finalNoCount) = client.sweeps.history().items
+
+        // The old "above zero" test would book this one as received. It is not final yet.
+        assertEquals(SweepStatus.BROADCASTED, inBlock.status)
+        assertTrue(inBlock.sweepConfirmations!! > 0)
+        assertTrue(inBlock.sweepConfirmations!! < inBlock.requiredConfirmations!!)
+        assertFalse(inBlock.isSettled)
+        // Final without a block count is published at the depth itself, not as 4294967295.
+        assertEquals(SweepStatus.COMPLETED, finalNoCount.status)
+        assertEquals(finalNoCount.requiredConfirmations, finalNoCount.sweepConfirmations)
+        assertTrue(finalNoCount.isSettled)
+    }
+
+    @Test
+    fun `history from a server without required_confirmations still decodes`() = runBlocking {
+        enqueue(
+            """
+            {"items":[
+              {"task_id":"t8","status":"completed","wallet_address":"0xg","chain":"ETH_MAINNET",
+               "sweep_confirmations":1,"completed_at":"2026-08-01T10:00:00Z"}
+            ],"meta":{"total":1,"page":1,"page_size":50}}
+            """.trimIndent(),
+        )
+
+        val item = client.sweeps.history().items.single()
+
+        assertNull(item.requiredConfirmations)
+        assertEquals(1, item.sweepConfirmations)
+        // Without a depth, one confirmation is the floor.
+        assertTrue(item.isSettled)
+        assertFalse(item.copy(sweepConfirmations = 0).isSettled)
+        assertFalse(item.copy(sweepConfirmations = null).isSettled)
+        assertFalse(item.copy(requiredConfirmations = 0, sweepConfirmations = 0).isSettled)
     }
 
     // ---- gas_source ------------------------------------------------------------------

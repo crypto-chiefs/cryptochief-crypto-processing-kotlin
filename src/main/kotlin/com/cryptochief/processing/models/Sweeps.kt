@@ -14,9 +14,8 @@ public object SweepMode {
  * Sweep status.
  *
  * A sweep is broadcast first and confirmed after: [BROADCASTED] means the transaction is
- * out and not yet confirmed, [COMPLETED] means the chain confirmed it. The platform used
- * to report `completed` at broadcast, so a sweep could read as settled while its
- * transaction was still unconfirmed or had been dropped.
+ * out and not yet final, [COMPLETED] means the task is done. Whether the funds settled:
+ * [Sweep.isSettled].
  *
  * [SKIPPED] is a sweep the platform decided against - almost always a balance below the
  * wallet's threshold. A normal outcome, not a failure.
@@ -136,18 +135,13 @@ public data class Sweep(
     /** What triggered this sweep: momentum, threshold or force. */
     @SerialName("type_work") val typeWork: String? = null,
     /**
-     * Confirmations seen on the sweep transaction, and when the platform stopped working on
-     * the task.
+     * Confirmations of the sweep transaction; grows while the sweep is [SweepStatus.BROADCASTED].
+     * An older [SweepStatus.COMPLETED] record can carry 0; it is not settled.
      *
-     * **[completedAt] is not proof the sweep settled.** The sweeper stamps it at every
-     * terminal outcome, failures included — a `failed` sweep is no more in flight than a
-     * `completed` one, so it carries a time too. Read its presence as settlement and a
-     * failed sweep books as money received.
-     *
-     * What settlement looks like: [sweepConfirmations] above zero (with [status]
-     * [SweepStatus.COMPLETED]). Or take `confirmed_at` off the `sweep.confirmed` webhook —
-     * [com.cryptochief.processing.webhook.SweepWebhookEvent.confirmedAt], which exists as a
-     * separate field for exactly this reason.
+     * [completedAt] is when the sweep transaction was sent (for `failed` and `skipped`, when that
+     * status was recorded); it is already set on `broadcasted` and does not change on `completed`.
+     * The sweep settled when [isSettled] is true; the settlement time is
+     * [com.cryptochief.processing.webhook.SweepWebhookEvent.confirmedAt].
      */
     @SerialName("sweep_confirmations") val sweepConfirmations: Int? = null,
     @SerialName("completed_at") val completedAt: String? = null,
@@ -180,7 +174,17 @@ public data class Sweep(
     @SerialName("service_fee_fiat") val serviceFeeFiat: String? = null,
     @Deprecated("Never populated by the API - sweeps carry createdAt and completedAt")
     @SerialName("updated_at") val updatedAt: String? = null,
-)
+    /** Network finality depth. See [isSettled]. */
+    @SerialName("required_confirmations") val requiredConfirmations: Int? = null,
+) {
+    /**
+     * The funds settled: [status] is [SweepStatus.COMPLETED] and [sweepConfirmations] is at
+     * least [requiredConfirmations] (1 when absent).
+     */
+    public val isSettled: Boolean
+        get() = status == SweepStatus.COMPLETED &&
+            (sweepConfirmations ?: 0) >= maxOf(requiredConfirmations ?: 1, 1)
+}
 
 /** A resolved set of sweep rules. */
 @Serializable

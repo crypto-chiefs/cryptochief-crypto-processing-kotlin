@@ -4,6 +4,7 @@
 | ---- | ------------- |
 | [payout/PayoutExample.kt](payout/PayoutExample.kt) | Estimate, execute, and poll a payout |
 | [invoice/InvoiceExample.kt](invoice/InvoiceExample.kt) | Create a fiat or crypto invoice and poll until paid |
+| [withdrawal/WithdrawalExample.kt](withdrawal/WithdrawalExample.kt) | Read a withdrawal and a history page |
 | [webhook/WebhookExample.kt](webhook/WebhookExample.kt) | JDK HTTP server verifying webhook signatures |
 | [ton-jetton/TonJettonExample.kt](ton-jetton/TonJettonExample.kt) | Jetton (USDT-on-TON) transfer |
 

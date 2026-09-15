@@ -45,7 +45,10 @@ fun main(args: Array<String>): Unit = runBlocking {
         if (last.isTerminal) {
             println("final: status=${last.status} hash=${last.txHash.orEmpty()}")
         } else {
-            println("pending: status=${last.status} hash=${last.txHash.orEmpty()} (gave up waiting after 2m)")
+            println(
+                "pending: status=${last.status} hash=${last.txHash.orEmpty()} " +
+                    "confirmations=${last.confirmations}/${last.requiredConfirmations} (gave up waiting after 2m)",
+            )
         }
     }
 }

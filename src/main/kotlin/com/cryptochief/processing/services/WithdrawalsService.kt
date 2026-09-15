@@ -18,6 +18,7 @@ public class WithdrawalsService internal constructor(private val transport: Http
             body = UuidRequest(uuid),
         )
 
+    /** A page of withdrawals. Filters by [HistoryQuery.dateFrom] and [HistoryQuery.dateTo] only. */
     public suspend fun history(query: HistoryQuery = HistoryQuery()): WithdrawalHistoryResponse =
         transport.send(
             path = "/v1/withdrawal/history",

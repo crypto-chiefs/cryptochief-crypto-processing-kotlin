@@ -12,7 +12,7 @@ Kotlin / JVM SDK for the [Crypto Chief](https://crypto-chief.com/processing/) cr
 
 ```kotlin
 dependencies {
-    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.8.0")
+    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.9.0")
 }
 ```
 
@@ -20,7 +20,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.8.0'
+    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.9.0'
 }
 ```
 
@@ -30,7 +30,7 @@ dependencies {
 <dependency>
   <groupId>com.crypto-chief</groupId>
   <artifactId>cryptochief-crypto-processing-kotlin</artifactId>
-  <version>0.8.0</version>
+  <version>0.9.0</version>
 </dependency>
 ```
 
@@ -310,15 +310,58 @@ id; on `walletHistory` the address is already fixed, so it matches the hashes an
 id only.
 
 A sweep is broadcast first and confirmed after: `SweepStatus.BROADCASTED` means the
-transaction is out and not yet confirmed, `SweepStatus.COMPLETED` means confirmed, with
-`sweepConfirmations` filled in. Earlier platform versions reported `completed` at
-broadcast, so a sweep could read as settled while its transaction was still unconfirmed.
+transaction is out and not yet final. `sweepConfirmations` grows while the sweep is `broadcasted`.
+An older `completed` record can carry `sweepConfirmations` 0; it is not settled.
 
-> **`completedAt` is not proof the sweep settled.** The sweeper stamps it at every terminal
-> outcome, failures included — a `failed` sweep is no more in flight than a `completed`
-> one, so it carries a time too. What says the funds moved is `sweepConfirmations` above
-> zero, or `confirmedAt` off the `sweep.confirmed` webhook, which exists as a separate
-> field for exactly this reason.
+Settled: `Sweep.isSettled`, i.e. `status == SweepStatus.COMPLETED && (sweepConfirmations ?: 0) >= maxOf(requiredConfirmations ?: 1, 1)`,
+or `confirmedAt` of the `sweep.confirmed` webhook.
+
+> `completedAt` is when the sweep was sent; it is already set on `broadcasted` and on `failed`/`skipped`.
+
+## Withdrawals
+
+Manual withdrawals are read-only here: `info` for one, `history` for a page. Withdrawals
+have no webhooks.
+
+```kotlin
+import com.cryptochief.processing.models.HistoryQuery
+import com.cryptochief.processing.models.WithdrawalStatus
+
+val wd = client.withdrawals.info("b0d1f7f9-1eaa-4c2f-8f9b-2b0d1b0b9f11")
+when {
+    wd.succeeded  -> println("completed: ${wd.txHash} at ${wd.confirmations}/${wd.requiredConfirmations}")
+    wd.isTerminal -> println("${wd.status}: ${wd.errorReason}")  // failed
+    wd.status == WithdrawalStatus.CONFIRM_CHECK ->
+        println("on chain, ${wd.confirmations ?: 0}/${wd.requiredConfirmations} confirmations")
+    else -> println("in progress: ${wd.status}")
+}
+
+val page = client.withdrawals.history(HistoryQuery(page = 1, pageSize = 50))
+```
+
+`history` filters by `dateFrom`/`dateTo` only.
+
+`WithdrawalStatus` (not the same set as payout statuses):
+
+| Status | Meaning |
+| ------ | ------- |
+| `queue` | Accepted, not started. |
+| `refueling` | The source wallet is being topped up with gas. |
+| `refuel_confirmed` | Gas is in place or no top-up was needed. The withdrawal transaction is sent next. |
+| `broadcasting` | EVM only: queued for broadcast. |
+| `sending` | Being signed and sent. |
+| `in_mempool` | BTC family only: broadcast, not yet mined. |
+| `confirm_check` | Sent, waiting for `requiredConfirmations`. |
+| `completed` | `confirmations` reached `requiredConfirmations`. Terminal. |
+| `failed` | See `errorReason`. Terminal. |
+
+`WithdrawalStatus.CANCELLED` is not produced by the API.
+
+`requiredConfirmations` is always sent. `confirmations` is absent or 0 while the transaction
+is not in a block. `completedAt` is set only on `completed`.
+
+`error`, `confirmedAt`, `contract`, `amountFiat` and `updatedAt` are deprecated and never
+sent; use `errorReason` and `completedAt`.
 
 ## Blockchain data
 
@@ -435,11 +478,39 @@ import com.cryptochief.processing.poll.waitForPayout
 import com.cryptochief.processing.PollOptions
 import java.time.Duration
 
-val terminal = client.waitForPayout(
+val last = client.waitForPayout(
     uuid    = payout.uuid,
-    options = PollOptions(interval = Duration.ofSeconds(5), timeout = Duration.ofMinutes(10)),
+    options = PollOptions(interval = Duration.ofSeconds(5), timeout = Duration.ofMinutes(90)),
 )
+if (!last.isTerminal) println("still ${last.status}")
 ```
+
+| Helper | Timeout when `PollOptions.timeout` is unset |
+| ------ | ------------------------------------------- |
+| `waitForPayout` | 90 minutes (`PollOptions.PAYOUT_TIMEOUT`) |
+| `waitForTransaction`, `waitForPayIn` | 10 minutes (`PollOptions.DEFAULT_TIMEOUT`) |
+
+On timeout the last snapshot is returned; check `isTerminal`. A payout stays `confirm_check`
+until every source reaches `requiredConfirmations`.
+
+## Confirmations
+
+An object reaches its final status when its count reaches `requiredConfirmations`. Decide on
+the final state below, not on the count.
+
+| Type | Count | Final state |
+| ---- | ----- | ----------- |
+| `TransactionInfo`, `TransactionWebhookEvent` | `confirmations` and `requiredConfirmations`, always sent: `confirmations` is 0 until in a block, grows while `broadcasted` | `confirmed` |
+| `PayoutInfo`, `PayoutWebhookEvent` | `confirmations`, optional: lowest among `sources` | `paid` |
+| `Sweep` | `sweepConfirmations`: grows while `broadcasted` | `completed` and `sweepConfirmations >= requiredConfirmations` (`Sweep.isSettled`) |
+| `SweepWebhookEvent` | `sweepConfirmations`, at least `requiredConfirmations` | the event itself |
+| `Withdrawal` | `confirmations`, optional: absent or 0 while not in a block | `completed` |
+
+Transaction webhooks are sent only for final statuses.
+
+A payout stays `confirm_check` until every source reaches `requiredConfirmations`, then
+becomes `paid`. Each entry of `sources` and `serviceOperations` has its own optional
+`confirmations`. On payouts `requiredConfirmations` is optional too.
 
 ## Webhook handling
 
@@ -525,7 +596,7 @@ try {
 } catch (e: ApiException) {
     when (e.code) {
         ErrorCode.INSUFFICIENT_FUNDS    -> // top up the master wallet
-        ErrorCode.ORDER_ALREADY_EXIST   -> // idempotent retry
+        ErrorCode.ASSET_NOT_ENABLED     -> // enable the coin in the project
         else                             -> throw e
     }
 } catch (e: NetworkException) {

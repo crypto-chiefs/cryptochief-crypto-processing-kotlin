@@ -22,7 +22,11 @@ fun main() {
         val signature = exchange.requestHeaders.getFirst("Signature")
         try {
             val event = WebhookHandler.handle<PayoutWebhookEvent>(apiKey, body, signature)
-            println("payout webhook: uuid=${event.uuid} status=${event.status}")
+            // payout.paid comes once every source reaches requiredConfirmations.
+            println(
+                "payout webhook: uuid=${event.uuid} status=${event.status} " +
+                    "confirmations=${event.confirmations} required=${event.requiredConfirmations}",
+            )
             exchange.sendResponseHeaders(200, 0)
             exchange.responseBody.use { it.write("ok".toByteArray()) }
         } catch (e: WebhookSignatureException) {
@@ -56,7 +60,7 @@ fun main() {
             println(
                 "sweep ${event.taskId}: ${event.amountHuman} ${event.assetSymbol} " +
                     "${event.walletAddress} -> ${event.toAddress} " +
-                    "tx=${event.sweepTxHash} confirmations=${event.sweepConfirmations} " +
+                    "tx=${event.sweepTxHash} confirmations=${event.sweepConfirmations}/${event.requiredConfirmations} " +
                     "trigger=${event.typeWork} fee_usd=${event.totalFeeUsd}",
             )
 

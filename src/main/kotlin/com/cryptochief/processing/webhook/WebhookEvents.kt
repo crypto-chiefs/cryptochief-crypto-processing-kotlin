@@ -22,6 +22,13 @@ public data class PayoutWebhookEvent(
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("completed_at") val completedAt: String? = null,
     @SerialName("error_reason") val errorReason: String? = null,
+    /**
+     * Lowest confirmation count among the payout's sources; `null` until a source has a
+     * transaction. Per-entry counts are under `confirmations` in [sources] and [serviceOperations].
+     */
+    @SerialName("confirmations") val confirmations: Int? = null,
+    /** Confirmations the network requires; `payout.paid` is sent once every source reaches it. Optional. */
+    @SerialName("required_confirmations") val requiredConfirmations: Int? = null,
 )
 
 @Serializable
@@ -40,6 +47,14 @@ public data class TransactionWebhookEvent(
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("completed_at") val completedAt: String? = null,
     @SerialName("error_reason") val errorReason: String? = null,
+    /**
+     * Confirmations of the transaction, always sent: at least [requiredConfirmations] on
+     * `transaction.confirmed`, 0 on `transaction.expired`. Webhooks are sent only for final
+     * statuses.
+     */
+    @SerialName("confirmations") val confirmations: Int = 0,
+    /** Confirmations the network requires. Always sent. */
+    @SerialName("required_confirmations") val requiredConfirmations: Int = 0,
 )
 
 @Serializable
@@ -89,8 +104,9 @@ public data class StaticDepositWebhookEvent(
 )
 
 /**
- * Funds swept off a deposit wallet, confirmed on chain. Event name
- * `sweep.confirmed` - the only sweep event the platform emits.
+ * Funds swept off a deposit wallet, confirmed on chain: [sweepConfirmations]
+ * reached [requiredConfirmations]. Event name `sweep.confirmed` - the only sweep
+ * event the platform emits.
  *
  * There is deliberately no `sweep.broadcasted`: "we sent it" is not something
  * you can act on, and an event that means "maybe" is one more thing to
@@ -114,13 +130,11 @@ public data class StaticDepositWebhookEvent(
  * @property assetType `native` or `token`
  * @property gasPumpTxHash set when the platform had to fund gas on the wallet
  *   before it could sweep
- * @property sweepConfirmations what makes this event true rather than hopeful,
- *   and never zero; it travels with the event rather than being implied by it,
- *   because "confirmed" is not the same number on every chain and your own
- *   finality policy needs the count to apply it
- * @property confirmedAt when the chain was observed to hold the sweep; NOT the
- *   task's completion timestamp, which is stamped on every terminal outcome
- *   including failures and so says nothing about settlement
+ * @property sweepConfirmations confirmations of the sweep transaction, at least
+ *   [requiredConfirmations]
+ * @property requiredConfirmations network finality depth; optional
+ * @property confirmedAt when the chain was observed to hold the sweep; not
+ *   `Sweep.completedAt`, which is the send time
  * @property typeWork what triggered it: `momentum`, `threshold` or `force`
  * @property totalFeeUsd what the sweep cost: network fee plus any gas or energy
  *   the platform fronted to make it possible
@@ -145,6 +159,7 @@ public data class SweepWebhookEvent(
     @SerialName("confirmed_at") val confirmedAt: String? = null,
     @SerialName("type_work") val typeWork: String? = null,
     @SerialName("total_fee_usd") val totalFeeUsd: String? = null,
+    @SerialName("required_confirmations") val requiredConfirmations: Int? = null,
 ) {
     public companion object {
         /** The only sweep event the platform emits. */
