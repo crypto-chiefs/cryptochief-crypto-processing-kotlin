@@ -11,9 +11,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import java.security.MessageDigest
 import java.time.Duration
-import java.util.Base64
 
 class CreditsServiceTest {
 
@@ -64,9 +62,8 @@ class CreditsServiceTest {
         val recorded = server.takeRequest()
         assertEquals("POST", recorded.method)
         assertEquals("/v1/credits/balance", recorded.path)
-        assertEquals("{}", recorded.body.readUtf8())
         assertEquals("mer_test", recorded.getHeader("Merchant"))
-        assertEquals(expectedSignature("{}", "secret-key"), recorded.getHeader("Signature"))
+        assertEquals("{}", HmacV1Gateway.assertSigned(recorded, "secret-key").toString(Charsets.UTF_8))
 
         assertEquals(-15_200_000L, balance.creditsBalance)
         assertEquals("-1.52", balance.usdBalance)
@@ -135,9 +132,8 @@ class CreditsServiceTest {
         assertEquals("POST", recorded.method)
         assertEquals("/v1/credits/topup", recorded.path)
         val expectedBody = """{"amount":"100.00","currency":"USDT","url_error":"https://shop.example/failed","url_success":"https://shop.example/paid"}"""
-        assertEquals(expectedBody, recorded.body.readUtf8())
         assertEquals("mer_test", recorded.getHeader("Merchant"))
-        assertEquals(expectedSignature(expectedBody, "secret-key"), recorded.getHeader("Signature"))
+        HmacV1Gateway.assertSameJson(expectedBody, HmacV1Gateway.assertSigned(recorded, "secret-key").toString(Charsets.UTF_8))
 
         assertEquals(987_654_321L, topup.invoiceId)
         assertEquals("https://pay.cryptochief.example/topup/abc123", topup.paymentLink)
@@ -170,8 +166,7 @@ class CreditsServiceTest {
         assertEquals("POST", recorded.method)
         assertEquals("/v1/credits/topup", recorded.path)
         val expectedBody = """{"amount":"25","currency":"USDC"}"""
-        assertEquals(expectedBody, recorded.body.readUtf8())
-        assertEquals(expectedSignature(expectedBody, "secret-key"), recorded.getHeader("Signature"))
+        HmacV1Gateway.assertSameJson(expectedBody, HmacV1Gateway.assertSigned(recorded, "secret-key").toString(Charsets.UTF_8))
 
         assertEquals(555L, topup.invoiceId)
         assertEquals("https://pay.cryptochief.example/topup/def456", topup.paymentLink)
@@ -180,12 +175,5 @@ class CreditsServiceTest {
         assertEquals("pending", topup.status)
         assertNull(topup.orderUuid)
         assertNull(topup.expiredAt)
-    }
-
-    private fun expectedSignature(canonical: String, key: String): String {
-        val b64 = Base64.getEncoder().encodeToString(canonical.toByteArray())
-        val md5 = MessageDigest.getInstance("MD5")
-        md5.update((b64 + key).toByteArray())
-        return md5.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
     }
 }

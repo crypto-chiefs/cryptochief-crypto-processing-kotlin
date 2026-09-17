@@ -1,7 +1,7 @@
 package com.cryptochief.processing.ton
 
 import com.cryptochief.processing.NetworkException
-import com.cryptochief.processing.http.CanonicalJson
+import com.cryptochief.processing.http.SdkJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
@@ -33,7 +33,7 @@ internal class TonRpcClient(
 ) {
     private val jettonWalletCache = ConcurrentHashMap<String, String>()
     private val jsonMedia = "application/json".toMediaType()
-    private val json = CanonicalJson.json
+    private val json = SdkJson.instance
 
     suspend fun lookupJettonWallet(jettonMaster: String, owner: String): String {
         require(jettonMaster.isNotEmpty()) { "jettonMaster is required" }

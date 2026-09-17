@@ -14,8 +14,8 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 public data class AvailableContract(
-    @SerialName("network") val network: Chain,
-    @SerialName("coin") val coin: String,
+    @SerialName("network") val network: Chain = Chain(""),
+    @SerialName("coin") val coin: String = "",
     /**
      * The token contract, and an **empty string** on a native coin. The API answers `""`
      * rather than `null` there, so an empty contract is a native coin saying it has none,
@@ -24,7 +24,7 @@ public data class AvailableContract(
     @SerialName("contract") val contract: String? = null,
     /** `native` or `token`. */
     @SerialName("type") val type: String? = null,
-    @SerialName("decimals") val decimals: Int,
+    @SerialName("decimals") val decimals: Int = 0,
     /**
      * The protocol family this asset's network belongs to. Sent by both catalogue
      * endpoints; this SDK dropped it until 0.7.0.
@@ -53,17 +53,17 @@ public data class AvailableContractsResponse(
 @Serializable
 public data class SupportedBlockchain(
     /** The chain key, the same value used everywhere a [Chain] is asked for. */
-    @SerialName("name") val name: Chain,
+    @SerialName("name") val name: Chain = Chain(""),
     @SerialName("type") val type: String = "",
 )
 
 @Serializable
 public data class WalletBalanceRow(
     @SerialName("contract") val contract: String? = null,
-    @SerialName("address") val address: String,
-    @SerialName("value") val value: String,
-    @SerialName("human_value") val humanValue: String,
-    @SerialName("decimals") val decimals: Int,
+    @SerialName("address") val address: String = "",
+    @SerialName("value") val value: String = "",
+    @SerialName("human_value") val humanValue: String = "",
+    @SerialName("decimals") val decimals: Int = 0,
 )
 
 @Serializable

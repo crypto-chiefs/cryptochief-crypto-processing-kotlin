@@ -6,9 +6,9 @@ import kotlinx.serialization.Serializable
 /** Merchant credits balance. `10_000_000` credits = 1 USD. */
 @Serializable
 public data class CreditsBalance(
-    @SerialName("credits_balance") val creditsBalance: Long,
+    @SerialName("credits_balance") val creditsBalance: Long = 0,
     /** Pre-formatted USD with 2 decimals; can be negative, e.g. `"-1.52"`. */
-    @SerialName("usd_balance") val usdBalance: String,
+    @SerialName("usd_balance") val usdBalance: String = "",
     @SerialName("is_postpaid") val isPostpaid: Boolean = false,
     /** Effective debt limit in credits (postpaid only, `0` for prepaid). */
     @SerialName("debt_limit_credits") val debtLimitCredits: Long = 0,
@@ -34,13 +34,13 @@ public data class CreditsTopupRequest(
 
 @Serializable
 public data class CreditsTopup(
-    @SerialName("invoice_id") val invoiceId: Long,
+    @SerialName("invoice_id") val invoiceId: Long = 0,
     /** Hosted payment page URL (QR, network selection, live status). */
-    @SerialName("payment_link") val paymentLink: String,
-    @SerialName("amount") val amount: String,
-    @SerialName("currency") val currency: String,
+    @SerialName("payment_link") val paymentLink: String = "",
+    @SerialName("amount") val amount: String = "",
+    @SerialName("currency") val currency: String = "",
     /** `"pending"` on creation. */
-    @SerialName("status") val status: String,
+    @SerialName("status") val status: String = "",
     @SerialName("order_uuid") val orderUuid: String? = null,
     /** Unix seconds. */
     @SerialName("expired_at") val expiredAt: Long? = null,

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.10.0] — 2026-09-17
+
+- **Breaking:** requests are signed with HMAC-SHA256 v1 only: `X-CC-Timestamp`, `X-CC-Nonce`, `X-CC-Signature`; the `Signature` header is not sent. `RequestSigner.sign()` is removed; `RequestSigner.hmacV1StringToSign()` and `signHmacV1()` are added
+- `ErrorCode.BAD_AUTH_HEADERS`, `SIGNATURE_TIMESTAMP_OUT_OF_RANGE`, `INVALID_SIGNATURE`, `SIGNATURE_REPLAYED`, `PAYLOAD_TOO_LARGE`; on `SIGNATURE_TIMESTAMP_OUT_OF_RANGE` the client corrects its clock offset from `server_time` once and repeats the request
+- `ApiException.code` and `description` are read from the white-label platform error envelope (`error.details.code`, else `error.name`; `error.message`); `server_time` from the top level or `error.details`
+- **Breaking:** `CanonicalJson` is removed; request bodies are sent in model member order instead of sorted order
+- **Breaking:** webhooks are verified with HMAC-SHA256 v1 over the raw body: `X-CC-Timestamp`, `X-Webhook-Delivery`, `X-CC-Signature`. `WebhookVerifier.verify(apiKey, rawBody, header)` and `verify(apiKey, rawBody, headers: Map<String, List<String>>)` return nothing and throw `WebhookHeadersException`, `WebhookTimestampException` or `WebhookSignatureException` (sealed base `WebhookVerificationException`); `tolerance` and `now` parameters, from Java `java.time.Duration` and `java.time.Clock`. `WebhookVerifier.HEADER`, `verify(apiKey, body, signatureHeader): Boolean` and `requireValid()` are removed; `TIMESTAMP_HEADER`, `SIGNATURE_HEADER`, `DEFAULT_TOLERANCE` are added
+- **Breaking:** `WebhookHandler.handle()` is replaced by `WebhookVerifier.parse()`
+- `RequestSigner.webhookV1StringToSign()`, `signWebhookV1()`, `WEBHOOK_V1_SCOPE`
+- `withIdempotencyKey(key) { … }` and the `IdempotencyKey` coroutine context element send and sign `Idempotency-Key`. The key must be printable ASCII with no space at either edge
+- `client.request(method, path, body)` — a signed request with any method, returning the response bytes, or decoded when `responseSerializer` is given
+- The path is signed with its `%`-sequences decoded (`RequestSigner.pathToSign()`), the query as sent; only `a`–`z` are upper-cased in the method
+- An `apiKey` of spaces and tabs is the empty key: signing and webhook verification refuse it
+- Webhook verification refuses an `X-CC-Timestamp` with a leading zero — `WebhookHeadersException`
+- API responses and webhook events decode when the platform omits a member, or sends it as `null`: the member reads as its default (`""`, `0`, `false`, an empty chain code). Request models are unchanged and still require their arguments
+
 ## [0.9.0] — 2026-09-15
 
 - **Breaking:** the payout fields below became nullable, `PollOptions.timeout` became `Duration?`, and the constructors of the changed data classes gained parameters; source- and binary-incompatible

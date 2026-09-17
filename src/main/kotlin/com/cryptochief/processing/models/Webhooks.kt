@@ -48,7 +48,7 @@ public data class WebhookPayload(
  */
 @Serializable
 public data class WebhookDelivery(
-    @SerialName("uuid") val uuid: String,
+    @SerialName("uuid") val uuid: String = "",
     @SerialName("event_type") val eventType: String = "",
     /** The object the event was about — the order or static deposit uuid you already hold. */
     @SerialName("reference") val reference: String = "",
@@ -79,7 +79,7 @@ public data class WebhookDelivery(
  */
 @Serializable
 public data class WebhookResendResult(
-    @SerialName("uuid") val uuid: String,
+    @SerialName("uuid") val uuid: String = "",
     @SerialName("event_type") val eventType: String = "",
     @SerialName("reference") val reference: String = "",
     @SerialName("status") val status: String = "",
@@ -99,7 +99,7 @@ public data class WebhookResendResult(
  */
 @Serializable
 public data class StaticDepositResendResult(
-    @SerialName("uuid") val uuid: String,
+    @SerialName("uuid") val uuid: String = "",
     @SerialName("deliveries") val deliveries: List<WebhookResendResult> = emptyList(),
     @SerialName("queued") val queued: Int = 0,
     @SerialName("total") val total: Int = 0,

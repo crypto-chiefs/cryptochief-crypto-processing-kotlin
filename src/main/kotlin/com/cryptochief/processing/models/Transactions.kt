@@ -51,12 +51,12 @@ public data class SignTransactionRequest(
 
 @Serializable
 public data class SignTransactionResponse(
-    @SerialName("uuid") val uuid: String,
-    @SerialName("status") val status: String,
-    @SerialName("signed_tx_hex") val signedTxHex: String,
-    @SerialName("tx_hash") val txHash: String,
-    @SerialName("expires_at") val expiresAt: String,
-    @SerialName("chain_family") val chainFamily: String,
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("status") val status: String = "",
+    @SerialName("signed_tx_hex") val signedTxHex: String = "",
+    @SerialName("tx_hash") val txHash: String = "",
+    @SerialName("expires_at") val expiresAt: String = "",
+    @SerialName("chain_family") val chainFamily: String = "",
     @SerialName("network") val network: Chain? = null,
 )
 
@@ -68,11 +68,11 @@ public data class ExecuteTransactionRequest(
 
 @Serializable
 public data class TransactionInfo(
-    @SerialName("uuid") val uuid: String,
-    @SerialName("status") val status: String,
-    @SerialName("network") val network: Chain,
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("status") val status: String = "",
+    @SerialName("network") val network: Chain = Chain(""),
     @SerialName("chain_family") val chainFamily: String? = null,
-    @SerialName("from_address") val fromAddress: String,
+    @SerialName("from_address") val fromAddress: String = "",
     @SerialName("to_address") val toAddress: String? = null,
     @SerialName("type") val type: String? = null,
     @SerialName("value") val value: String? = null,

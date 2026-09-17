@@ -1,18 +1,25 @@
 package com.cryptochief.processing
 
+import com.cryptochief.processing.http.HttpTransport
+import com.cryptochief.processing.http.SdkJson
 import com.cryptochief.processing.models.UuidRequest
+import com.cryptochief.processing.webhook.WebhookVerifier
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.serializer
+import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.io.File
 import java.time.Duration
 
 class HttpTransportTest {
@@ -50,7 +57,7 @@ class HttpTransportTest {
         client.payouts.info("abc")
         val recorded = server.takeRequest()
         assertEquals("mer_test", recorded.getHeader("Merchant"))
-        assertTrue(!recorded.getHeader("Signature").isNullOrEmpty())
+        HmacV1Gateway.assertSigned(recorded, "secret-key")
         assertEquals("application/json", recorded.getHeader("Content-Type"))
         assertEquals("application/json", recorded.getHeader("Accept"))
         assertTrue(recorded.getHeader("User-Agent")?.startsWith("cryptochief-kotlin/") == true)
@@ -142,5 +149,28 @@ class HttpTransportTest {
         val ex = assertThrows<ApiException> { runBlocking { client.payouts.info("a") } }
         assertEquals(502, ex.status)
         assertEquals(3, server.requestCount)
+    }
+
+    /**
+     * Responses, TON RPC and webhook events are decoded by one [SdkJson.instance]; a second
+     * configuration would let the decoders diverge without a failing test.
+     */
+    @Test
+    fun `one JSON configuration is shared`() {
+        val options = Options.builder().apply {
+            merchantId = "mer_test"
+            apiKey = "secret-key"
+        }.build()
+        assertSame(SdkJson.instance, HttpTransport(options, OkHttpClient()).json)
+        assertSame(SdkJson.instance, WebhookVerifier.json)
+
+        val sources = File("src/main/kotlin")
+        assumeTrue(sources.isDirectory, "run from the project directory")
+        val builders = sources.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" && it.name != "SdkJson.kt" }
+            .filter { it.readText().contains("Json {") }
+            .map { it.name }
+            .toList()
+        assertEquals(emptyList<String>(), builders, "Json configuration outside SdkJson")
     }
 }

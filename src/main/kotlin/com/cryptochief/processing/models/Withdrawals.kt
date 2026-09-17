@@ -38,13 +38,13 @@ public object WithdrawalStatus {
 /** A manual withdrawal. [status] is one of [WithdrawalStatus]. */
 @Serializable
 public data class Withdrawal(
-    @SerialName("uuid") val uuid: String,
-    @SerialName("status") val status: String,
-    @SerialName("network") val network: Chain,
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("status") val status: String = "",
+    @SerialName("network") val network: Chain = Chain(""),
     @SerialName("coin") val coin: String? = null,
     @Deprecated("Not sent by the API; always null.")
     @SerialName("contract") val contract: String? = null,
-    @SerialName("amount") val amount: String,
+    @SerialName("amount") val amount: String = "",
     @Deprecated("Not sent by the API; always null.")
     @SerialName("amount_fiat") val amountFiat: String? = null,
     @SerialName("from_address") val fromAddress: String? = null,

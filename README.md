@@ -516,20 +516,88 @@ becomes `paid`. Each entry of `sources` and `serviceOperations` has its own opti
 
 ```kotlin
 import com.cryptochief.processing.webhook.PayoutWebhookEvent
-import com.cryptochief.processing.webhook.WebhookHandler
-import com.cryptochief.processing.webhook.WebhookSignatureException
+import com.cryptochief.processing.webhook.WebhookVerificationException
+import com.cryptochief.processing.webhook.WebhookVerifier
 
+// exchange: com.sun.net.httpserver.HttpExchange
 try {
-    val event = WebhookHandler.handle<PayoutWebhookEvent>(
-        apiKey = apiKey,
-        body = rawBody,
-        signatureHeader = request.header("Signature"),
-    )
+    val event = WebhookVerifier.parse<PayoutWebhookEvent>(apiKey, rawBody, exchange.requestHeaders)
     println("payout ${event.uuid} → ${event.status}")
-} catch (e: WebhookSignatureException) {
-    response.status = 401
+} catch (e: WebhookVerificationException) {
+    exchange.sendResponseHeaders(401, -1)
 }
 ```
+
+`rawBody` is the request body as received, before JSON parsing.
+
+| Header | Value |
+|---|---|
+| `X-Webhook-Delivery` | delivery id, 1–128 characters `[A-Za-z0-9_-]`; the same on every attempt and resend of one delivery |
+| `X-CC-Timestamp` | Unix time of the attempt, seconds |
+| `X-CC-Signature` | `v1=` + 64 hex characters |
+
+String to sign, lines joined with `\n`, no trailing newline:
+
+```
+CC-HMAC-SHA256-WEBHOOK-V1
+<X-CC-Timestamp>
+<X-Webhook-Delivery>
+<lowercase hex SHA-256 of the body bytes>
+```
+
+`X-CC-Signature = "v1=" + hex(HMAC-SHA256(key = apiKey, message = stringToSign))`
+
+| Exception | Reason |
+|---|---|
+| `WebhookHeadersException` | a header is missing, repeated, contains CR or LF, or is malformed |
+| `WebhookTimestampException` | `X-CC-Timestamp` differs from the current time by more than the tolerance, 300 s by default |
+| `WebhookSignatureException` | the signature does not match |
+
+All three extend `WebhookVerificationException`; answer them with 401. Spaces and tabs around
+header values are removed; `X-CC-Timestamp` is a decimal number without a leading zero; the
+signature is compared in constant time, hex in any case. An `apiKey` that is empty or holds only
+spaces and tabs throws `IllegalArgumentException`; a body that does not decode as the requested
+type throws `DecodeException`.
+
+Headers are a map of name to every value received under it; names are case-insensitive:
+
+```kotlin
+import com.cryptochief.processing.webhook.WebhookVerifier
+import java.time.Instant
+import kotlin.time.Duration.Companion.seconds
+
+// com.sun.net.httpserver.HttpExchange
+WebhookVerifier.verify(apiKey, body, exchange.requestHeaders)
+// okhttp3.Headers
+WebhookVerifier.verify(apiKey, body, headers.toMultimap())
+// tolerance and clock
+WebhookVerifier.verify(apiKey, body, headers.toMultimap(), tolerance = 600.seconds, now = { Instant.now() })
+// verify and decode
+val sweep = WebhookVerifier.parse<SweepWebhookEvent>(apiKey, body, exchange.requestHeaders)
+```
+
+An overload takes a header function instead. It returns one value per name, so a repeated header
+is not visible to it and is not rejected; pass the map where the server exposes one:
+
+```kotlin
+// jakarta.servlet.http.HttpServletRequest
+WebhookVerifier.verify(apiKey, body) { name -> request.getHeader(name) }
+```
+
+From Java, tolerance and clock are `java.time.Duration` and `java.time.Clock`; the event type is
+given by its serializer:
+
+```java
+WebhookVerifier.verify(apiKey, body, exchange.getRequestHeaders(), Duration.ofSeconds(600), Clock.systemUTC());
+PayoutWebhookEvent event = WebhookVerifier.parse(apiKey, body, exchange.getRequestHeaders(),
+        PayoutWebhookEvent.Companion.serializer());
+```
+
+A retry or resend carries the same `X-Webhook-Delivery` and a new `X-CC-Timestamp`; use the
+delivery id to skip events already processed.
+
+`RequestSigner.webhookV1StringToSign()` and `RequestSigner.signWebhookV1()` compute the same values
+outside the verifier.
 
 IP allowlist:
 
@@ -542,7 +610,7 @@ if (request.remoteAddress !in WebhookVerifier.SENDER_IPS) {
 }
 ```
 
-Typed events: `PayoutWebhookEvent`, `TransactionWebhookEvent`, `PayInWebhookEvent`, `StaticDepositWebhookEvent`.
+Typed events: `PayoutWebhookEvent`, `TransactionWebhookEvent`, `PayInWebhookEvent`, `StaticDepositWebhookEvent`, `SweepWebhookEvent`.
 
 ## Wallet private key decryption
 
@@ -582,7 +650,86 @@ val client = CryptoChiefClient.create {
 }
 ```
 
-A caller-supplied `httpClient` is not closed by the SDK.
+A caller-supplied `httpClient` is not closed by the SDK. `baseUrl` is an origin: a path in it is
+sent but not signed (see [Request signing](#request-signing)).
+
+## Request signing
+
+Requests are signed with HMAC-SHA256 v1. The body is sent as serialized, without
+canonicalization; the signature covers the bytes sent.
+
+| Header | Value |
+|---|---|
+| `Merchant` | merchant ID |
+| `X-CC-Timestamp` | Unix time, seconds |
+| `X-CC-Nonce` | 32 lowercase hex characters (16 random bytes) |
+| `X-CC-Signature` | `v1=` + 64 lowercase hex characters |
+
+String to sign, lines joined with `\n`, no trailing newline:
+
+```
+CC-HMAC-SHA256-REQ-V1
+<X-CC-Timestamp>
+<X-CC-Nonce>
+<METHOD>
+<path, e.g. /v1/payout/execute>
+<query without "?", or empty>
+<Merchant>
+<Idempotency-Key, or empty>
+<lowercase hex SHA-256 of the body bytes>
+```
+
+`X-CC-Signature = "v1=" + hex(HMAC-SHA256(key = apiKey, message = stringToSign))`
+
+`path` is the route (`/v1/payout/execute`) without the base URL prefix, so `baseUrl` is an origin:
+a proxy that serves the API under a path of its own has to strip that path before the request
+reaches the gateway, which signs the path it received.
+
+The path is signed with its `%`-sequences decoded — `/v1/orders/payout%2F8814` goes on the wire as
+written and is signed as `/v1/orders/payout/8814`, the form the server reads. The query is signed
+as sent, without decoding. `METHOD` is upper-cased over `a`–`z` only.
+
+Timestamp, nonce and signature are computed for every attempt. On
+`SIGNATURE_TIMESTAMP_OUT_OF_RANGE` the client sets its clock offset from `server_time` once
+and repeats the request.
+
+`RequestSigner.hmacV1StringToSign()` and `RequestSigner.signHmacV1()` compute the same values
+outside the client.
+
+### Low-level request
+
+`client.request(method, path, body)` sends a signed request with any method and returns the
+response bytes; pass `responseSerializer` to decode it. Signing, retries, clock correction and the
+error envelope are the ones the service methods use, so a route this SDK has no method for — a GET
+with a query, say — is one call:
+
+```kotlin
+val raw = client.request("GET", "/v1/balance?asset=USDT")
+```
+
+### Idempotency key
+
+`Idempotency-Key` is optional and part of the string to sign, on service calls and on
+`client.request()` alike. `withIdempotencyKey` sets it for every call made inside the block:
+
+```kotlin
+import com.cryptochief.processing.withIdempotencyKey
+
+val payout = withIdempotencyKey("payout-2026-09-16-0001") {
+    client.payouts.execute(request)
+}
+```
+
+It is a coroutine context element, so `withContext(IdempotencyKey("payout-2026-09-16-0001"))`
+does the same, and the innermost value wins.
+
+The key must be printable ASCII with no space at either edge; anything else throws
+`IllegalArgumentException` before the request is sent. Adding the header from an OkHttp
+interceptor instead leaves it out of the signature, and the gateway answers 401
+`INVALID_SIGNATURE`.
+
+The platform keeps the value in the billing record of the call, up to 255 bytes. It does not
+deduplicate payouts — `ExecutePayoutRequest.orderId` does.
 
 ## Errors
 
@@ -604,7 +751,13 @@ try {
 }
 ```
 
-5xx is retried with exponential backoff and full jitter. 4xx is not retried.
+`e.code` is taken from the gateway envelope (`error`, or `msg` when `error` is `SERVICE_ERROR`)
+and from the white-label platform envelope (`error.details.code`, else `error.name`). A body
+without a code gives `HTTP_<status>`.
+
+5xx is retried with exponential backoff and full jitter. 4xx is not retried. The exception is
+one repeat after `SIGNATURE_TIMESTAMP_OUT_OF_RANGE`, with the clock offset taken from
+`server_time`.
 
 ## Other SDKs
 

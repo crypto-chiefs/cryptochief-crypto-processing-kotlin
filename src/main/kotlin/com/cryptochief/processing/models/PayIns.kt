@@ -76,19 +76,19 @@ public data class CreatePayInRequest(
 
 @Serializable
 public data class CoinOption(
-    @SerialName("chain_family") val chainFamily: ChainFamily,
-    @SerialName("coin") val coin: String,
-    @SerialName("network") val network: Chain,
+    @SerialName("chain_family") val chainFamily: ChainFamily = ChainFamily(""),
+    @SerialName("coin") val coin: String = "",
+    @SerialName("network") val network: Chain = Chain(""),
     @SerialName("contract") val contract: String? = null,
 )
 
 @Serializable
 public data class PayIn(
     @SerialName("type") val type: String = "",
-    @SerialName("uuid") val uuid: String,
-    @SerialName("order_id") val orderId: String,
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("order_id") val orderId: String = "",
     @SerialName("user_id") val userId: String? = null,
-    @SerialName("status") val status: String,
+    @SerialName("status") val status: String = "",
     @SerialName("mode") val mode: String? = null,
     @SerialName("amount_crypto") val amountCrypto: String? = null,
     @SerialName("amount_fiat") val amountFiat: String? = null,

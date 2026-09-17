@@ -2,8 +2,8 @@ package examples.webhook
 
 import com.cryptochief.processing.webhook.PayoutWebhookEvent
 import com.cryptochief.processing.webhook.SweepWebhookEvent
-import com.cryptochief.processing.webhook.WebhookHandler
-import com.cryptochief.processing.webhook.WebhookSignatureException
+import com.cryptochief.processing.webhook.WebhookVerificationException
+import com.cryptochief.processing.webhook.WebhookVerifier
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 
@@ -18,18 +18,21 @@ fun main() {
             exchange.close()
             return@createContext
         }
+        // Raw bytes as received: the signature covers them, not the parsed JSON.
         val body = exchange.requestBody.readAllBytes()
-        val signature = exchange.requestHeaders.getFirst("Signature")
         try {
-            val event = WebhookHandler.handle<PayoutWebhookEvent>(apiKey, body, signature)
+            // X-CC-Timestamp, X-Webhook-Delivery and X-CC-Signature; header names are case-insensitive.
+            val event = WebhookVerifier.parse<PayoutWebhookEvent>(apiKey, body, exchange.requestHeaders)
+            // The same delivery id arrives again on retries and resends.
+            val deliveryId = exchange.requestHeaders.getFirst(WebhookVerifier.DELIVERY_HEADER)
             // payout.paid comes once every source reaches requiredConfirmations.
             println(
-                "payout webhook: uuid=${event.uuid} status=${event.status} " +
+                "payout webhook: delivery=$deliveryId uuid=${event.uuid} status=${event.status} " +
                     "confirmations=${event.confirmations} required=${event.requiredConfirmations}",
             )
             exchange.sendResponseHeaders(200, 0)
             exchange.responseBody.use { it.write("ok".toByteArray()) }
-        } catch (e: WebhookSignatureException) {
+        } catch (e: WebhookVerificationException) {
             System.err.println("rejected: ${e.message}")
             exchange.sendResponseHeaders(401, -1)
             exchange.close()
@@ -54,9 +57,8 @@ fun main() {
             return@createContext
         }
         val body = exchange.requestBody.readAllBytes()
-        val signature = exchange.requestHeaders.getFirst("Signature")
         try {
-            val event = WebhookHandler.handle<SweepWebhookEvent>(apiKey, body, signature)
+            val event = WebhookVerifier.parse<SweepWebhookEvent>(apiKey, body, exchange.requestHeaders)
             println(
                 "sweep ${event.taskId}: ${event.amountHuman} ${event.assetSymbol} " +
                     "${event.walletAddress} -> ${event.toAddress} " +
@@ -76,7 +78,7 @@ fun main() {
 
             exchange.sendResponseHeaders(200, 0)
             exchange.responseBody.use { it.write("ok".toByteArray()) }
-        } catch (e: WebhookSignatureException) {
+        } catch (e: WebhookVerificationException) {
             System.err.println("rejected: ${e.message}")
             exchange.sendResponseHeaders(401, -1)
             exchange.close()

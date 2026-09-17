@@ -7,7 +7,6 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -67,8 +66,7 @@ class BlockchainServiceTest {
         val req = taken()
         assertEquals("/v1/blockchains/list", req.path)
         // Nothing to filter by, but the empty object is still signed like every request.
-        assertEquals("{}", req.body.readUtf8())
-        assertNotNull(req.getHeader("Signature"))
+        assertEquals("{}", HmacV1Gateway.assertSigned(req, "secret-key").toString(Charsets.UTF_8))
 
         assertEquals(4, chains.size)
         assertEquals(Chain.ETH_MAINNET, chains[0].name)

@@ -121,13 +121,13 @@ public data class SweepWalletHistoryQuery(
 
 @Serializable
 public data class Sweep(
-    @SerialName("task_id") val taskId: String,
+    @SerialName("task_id") val taskId: String = "",
     @SerialName("sweep_tx_hash") val sweepTxHash: String? = null,
     @SerialName("gas_pump_tx_hash") val gasPumpTxHash: String? = null,
     /** One of the [SweepStatus] constants. */
-    @SerialName("status") val status: String,
-    @SerialName("wallet_address") val walletAddress: String,
-    @SerialName("chain") val chain: Chain,
+    @SerialName("status") val status: String = "",
+    @SerialName("wallet_address") val walletAddress: String = "",
+    @SerialName("chain") val chain: Chain = Chain(""),
     @SerialName("chain_family") val chainFamily: ChainFamily? = null,
     @SerialName("asset_symbol") val assetSymbol: String? = null,
     @SerialName("asset_type") val assetType: String? = null,
@@ -295,7 +295,7 @@ public data class SweepHistoryResponse(
 
 @Serializable
 public data class ForceSweepResponse(
-    @SerialName("status") val status: String,
+    @SerialName("status") val status: String = "",
 )
 
 @Serializable

@@ -3,9 +3,11 @@ package com.cryptochief.processing.http
 import com.cryptochief.processing.ApiException
 import com.cryptochief.processing.DecodeException
 import com.cryptochief.processing.ErrorCode
+import com.cryptochief.processing.IdempotencyKey
 import com.cryptochief.processing.NetworkException
 import com.cryptochief.processing.Options
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -16,8 +18,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -30,16 +34,23 @@ import java.util.concurrent.TimeUnit
 
 private val APPLICATION_JSON = "application/json".toMediaType()
 private const val HEADER_MERCHANT = "Merchant"
-private const val HEADER_SIGNATURE = "Signature"
 
 internal class HttpTransport(
     private val options: Options,
     httpClient: OkHttpClient? = options.httpClient,
+    private val epochSeconds: () -> Long = { System.currentTimeMillis() / 1000 },
 ) {
     private val log: Logger = LoggerFactory.getLogger("com.cryptochief.processing")
 
+    /** Added to the local clock for `X-CC-Timestamp`; set from `server_time`. */
+    @Volatile
+    private var clockOffsetSeconds: Long = 0
+
     val http: OkHttpClient = httpClient ?: defaultClient(options)
-    val json: Json = CanonicalJson.json
+    val json: Json = SdkJson.instance
+
+    /** `Merchant` value as sent and signed: [Options.merchantId] without leading and trailing spaces and tabs. */
+    private val merchant: String = options.merchantId.trim(' ', '\t')
 
     suspend fun <Req, Resp> send(
         path: String,
@@ -47,17 +58,25 @@ internal class HttpTransport(
         responseSerializer: DeserializationStrategy<Resp>,
         body: Req,
     ): Resp {
-        val canonical = canonicaliseRequest(requestSerializer, body)
-        val raw = sendRaw(path, canonical)
+        val raw = request("POST", path, json.encodeToString(requestSerializer, body).toByteArray(Charsets.UTF_8))
         if (raw.isEmpty()) {
             throw DecodeException("cryptochief: empty response body from $path")
         }
         return decodeResponse(path, responseSerializer, raw)
     }
 
-    private fun <Req> canonicaliseRequest(serializer: SerializationStrategy<Req>, body: Req): ByteArray {
-        val element = json.encodeToJsonElement(serializer, body)
-        return CanonicalJson.encode(element)
+    /** [request], then decodes the response with [responseSerializer]. */
+    suspend fun <Resp> request(
+        method: String,
+        path: String,
+        body: ByteArray,
+        responseSerializer: DeserializationStrategy<Resp>,
+    ): Resp {
+        val raw = request(method, path, body)
+        if (raw.isEmpty()) {
+            throw DecodeException("cryptochief: empty response body from $path")
+        }
+        return decodeResponse(path, responseSerializer, raw)
     }
 
     private fun <Resp> decodeResponse(
@@ -70,39 +89,78 @@ internal class HttpTransport(
         throw DecodeException("cryptochief: decode $path response: ${e.message}", e)
     }
 
-    private suspend fun sendRaw(path: String, canonical: ByteArray): ByteArray = withContext(Dispatchers.IO) {
-        val signature = RequestSigner.sign(canonical, options.apiKey)
-        val url = options.baseUrl + path
-        val attempts = options.maxRetries + 1
-        var lastException: RuntimeException? = null
+    /**
+     * Sends [body] as is with [method]; the signature covers these bytes, the path with its
+     * `%`-sequences decoded and the query as sent.
+     */
+    suspend fun request(method: String, path: String, body: ByteArray): ByteArray {
+        require(method.isNotEmpty()) { "cryptochief: request method is required" }
+        require(path.startsWith("/")) { "cryptochief: request path must start with \"/\": $path" }
+        val httpMethod = RequestSigner.upperAscii(method)
+        require(body.isEmpty() || permitsBody(httpMethod)) {
+            "cryptochief: $httpMethod takes no request body"
+        }
+        val signedPath = RequestSigner.pathToSign(path)
+        val idempotencyKey = currentCoroutineContext()[IdempotencyKey]?.value.orEmpty()
+        return withContext(Dispatchers.IO) { sendSigned(httpMethod, path, signedPath, body, idempotencyKey) }
+    }
 
-        for (attempt in 0 until attempts) {
-            if (attempt > 0) {
-                val backoffMs = Backoff.delay(
-                    attempt = attempt,
-                    base = options.initialRetryDelay,
-                    max = options.maxRetryDelay,
-                ).toMillis()
-                log.debug("cryptochief retry attempt={} delay={}ms path={}", attempt, backoffMs, path)
-                delay(backoffMs)
-            }
+    private suspend fun sendSigned(
+        method: String,
+        path: String,
+        signedPath: String,
+        body: ByteArray,
+        idempotencyKey: String,
+    ): ByteArray {
+        val url = (options.baseUrl + path).toHttpUrl()
+        val query = url.encodedQuery.orEmpty()
+        val requestBody = if (body.isEmpty() && !requiresBody(method)) null else body.toRequestBody(APPLICATION_JSON)
+        val attempts = options.maxRetries + 1
+        var clockCorrected = false
+        var attempt = 0
+
+        while (true) {
+            val timestamp = (epochSeconds() + clockOffsetSeconds).toString()
+            val nonce = RequestSigner.newNonce()
+            val hmac = RequestSigner.signHmacV1(
+                apiKey = options.apiKey,
+                timestamp = timestamp,
+                nonce = nonce,
+                method = method,
+                path = signedPath,
+                query = query,
+                merchant = merchant,
+                idempotencyKey = idempotencyKey,
+                body = body,
+            )
 
             val request = Request.Builder()
                 .url(url)
-                .post(canonical.toRequestBody(APPLICATION_JSON))
-                .header("Content-Type", "application/json")
+                .method(method, requestBody)
+                .apply { if (requestBody != null) header("Content-Type", "application/json") }
                 .header("Accept", "application/json")
                 .header("User-Agent", options.userAgent)
-                .header(HEADER_MERCHANT, options.merchantId)
-                .header(HEADER_SIGNATURE, signature)
+                .header(HEADER_MERCHANT, merchant)
+                .header(RequestSigner.HEADER_TIMESTAMP, timestamp)
+                .header(RequestSigner.HEADER_NONCE, nonce)
+                .header(RequestSigner.HEADER_HMAC_SIGNATURE, RequestSigner.HMAC_V1_SIGNATURE_PREFIX + hmac)
+                .apply {
+                    if (idempotencyKey.isNotEmpty()) {
+                        header(RequestSigner.HEADER_IDEMPOTENCY_KEY, idempotencyKey)
+                    }
+                }
                 .build()
 
             val response: Response = try {
                 http.newCall(request).awaitResponse()
             } catch (e: IOException) {
                 val netErr = NetworkException("cryptochief: request failed: ${e.message}", e)
-                lastException = netErr
-                if (attempt + 1 < attempts) continue else throw netErr
+                if (attempt + 1 < attempts) {
+                    attempt++
+                    backoff(attempt, path)
+                    continue
+                }
+                throw netErr
             }
 
             val status: Int
@@ -118,54 +176,93 @@ internal class HttpTransport(
             }
             log.debug("cryptochief response path={} status={} bytes={}", path, status, bytes.size)
 
-            if (status in 200..299) return@withContext bytes
+            if (status in 200..299) return bytes
 
-            val apiErr = parseApiError(status, bytes)
+            val parsed = parseError(status, bytes)
+            val apiErr = parsed.exception
+            if (!clockCorrected && apiErr.code == ErrorCode.SIGNATURE_TIMESTAMP_OUT_OF_RANGE && parsed.serverTime != null) {
+                clockCorrected = true
+                clockOffsetSeconds = parsed.serverTime - epochSeconds()
+                log.debug("cryptochief clock offset={}s path={}", clockOffsetSeconds, path)
+                continue
+            }
             if (status >= 500 && attempt + 1 < attempts) {
-                lastException = apiErr
+                attempt++
+                backoff(attempt, path)
                 continue
             }
             throw apiErr
         }
-        throw lastException ?: NetworkException("cryptochief: retry budget exhausted")
     }
 
-    private fun parseApiError(status: Int, body: ByteArray): ApiException {
+    private suspend fun backoff(attempt: Int, path: String) {
+        val backoffMs = Backoff.delay(
+            attempt = attempt,
+            base = options.initialRetryDelay,
+            max = options.maxRetryDelay,
+        ).toMillis()
+        log.debug("cryptochief retry attempt={} delay={}ms path={}", attempt, backoffMs, path)
+        delay(backoffMs)
+    }
+
+    private class ParsedError(val exception: ApiException, val serverTime: Long?)
+
+    /**
+     * Error body in either envelope:
+     * - gateway: `{"ok":false,"error":"<CODE>","msg":"...","server_time":...}`; the code is in
+     *   `msg` when `error` is absent or `SERVICE_ERROR`;
+     * - white-label platform: `{"data":null,"error":{"status":...,"name":...,"message":...,
+     *   "details":{"code":"<CODE>","server_time":...}},"server_time":...}`; the code is
+     *   `error.details.code`, else `error.name`.
+     *
+     * `server_time` is taken from the top level, then from `error.details`.
+     */
+    private fun parseError(status: Int, body: ByteArray): ParsedError {
         val text = body.toString(Charsets.UTF_8)
         var code: String? = null
         var message: String? = null
+        var serverTime: Long? = null
         try {
-            val element = json.parseToJsonElement(text)
-            val obj = element as? JsonObject
+            val obj = json.parseToJsonElement(text) as? JsonObject
             if (obj != null) {
-                val errorField = (obj["error"] as? JsonPrimitive)?.contentOrNull
-                val msgField = (obj["msg"] as? JsonPrimitive)?.contentOrNull
-                when {
-                    msgField.isNullOrEmpty() || msgField == errorField -> {
-                        code = errorField
-                        message = null
+                val error = obj["error"]
+                if (error is JsonObject) {
+                    val details = error["details"] as? JsonObject
+                    code = details?.string("code")?.ifEmpty { null } ?: error.string("name")
+                    message = error.string("message")?.takeIf { it != code }
+                    serverTime = obj.number("server_time") ?: details?.number("server_time")
+                } else {
+                    val errorField = (error as? JsonPrimitive)?.contentOrNull
+                    val msgField = (obj["msg"] as? JsonPrimitive)?.contentOrNull
+                    when {
+                        msgField.isNullOrEmpty() || msgField == errorField -> code = errorField
+                        errorField.isNullOrEmpty() || errorField == ErrorCode.SERVICE_ERROR -> code = msgField
+                        else -> {
+                            code = errorField
+                            message = msgField
+                        }
                     }
-                    errorField.isNullOrEmpty() || errorField == ErrorCode.SERVICE_ERROR -> {
-                        code = msgField
-                        message = null
-                    }
-                    else -> {
-                        code = errorField
-                        message = msgField
-                    }
+                    serverTime = obj.number("server_time")
                 }
             }
         } catch (_: SerializationException) {
         }
         val finalCode = code?.ifEmpty { null } ?: "HTTP_$status"
-        val finalMessage = message ?: finalCode
-        return ApiException(
+        val finalMessage = message?.ifEmpty { null } ?: finalCode
+        val exception = ApiException(
             code = finalCode,
             status = status,
             description = finalMessage,
             raw = text.truncate(8 * 1024),
         )
+        return ParsedError(exception, serverTime)
     }
+
+    private fun JsonObject.string(key: String): String? =
+        (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+
+    private fun JsonObject.number(key: String): Long? =
+        (this[key] as? JsonPrimitive)?.takeIf { !it.isString }?.longOrNull
 
     private fun String.truncate(max: Int): String =
         if (length <= max) this else substring(0, max) + "…"
@@ -175,6 +272,13 @@ internal class HttpTransport(
     }
 
     private companion object {
+        /** OkHttp refuses a body on these, and a server would not read one. */
+        fun permitsBody(method: String): Boolean = method != "GET" && method != "HEAD"
+
+        /** OkHttp requires a body on these, empty included. */
+        fun requiresBody(method: String): Boolean =
+            method == "POST" || method == "PUT" || method == "PATCH" || method == "PROPPATCH" || method == "REPORT"
+
         fun defaultClient(options: Options): OkHttpClient = OkHttpClient.Builder()
             .callTimeout(options.requestTimeout)
             .connectTimeout(20, TimeUnit.SECONDS)

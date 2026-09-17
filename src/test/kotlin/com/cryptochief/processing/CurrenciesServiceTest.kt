@@ -6,7 +6,6 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -65,8 +64,7 @@ class CurrenciesServiceTest {
         val req = taken()
         assertEquals("/v1/currencies/fiats", req.path)
         // Nothing to filter by, but the empty object is still the signed body.
-        assertEquals("{}", req.body.readUtf8())
-        assertNotNull(req.getHeader("Signature"))
+        assertEquals("{}", HmacV1Gateway.assertSigned(req, "secret-key").toString(Charsets.UTF_8))
 
         assertEquals(3, fiats.size)
         assertEquals("JMD", fiats[0].code)
@@ -118,8 +116,7 @@ class CurrenciesServiceTest {
         val req = taken()
         assertEquals("/v1/currencies/cryptos", req.path)
         // Platform-wide: nothing to send, and the empty object is signed all the same.
-        assertEquals("{}", req.body.readUtf8())
-        assertNotNull(req.getHeader("Signature"))
+        assertEquals("{}", HmacV1Gateway.assertSigned(req, "secret-key").toString(Charsets.UTF_8))
 
         // by_exchange is a map from exchange name to that exchange's tickers, and more
         // than one exchange has to survive the decode - a single-exchange fixture would

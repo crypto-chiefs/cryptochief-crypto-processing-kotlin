@@ -60,21 +60,21 @@ public data class WalletHistoryQuery(
 
 @Serializable
 public data class WalletCoinBalance(
-    @SerialName("address") val address: String,
-    @SerialName("chain") val chain: Chain,
-    @SerialName("coin") val coin: String,
+    @SerialName("address") val address: String = "",
+    @SerialName("chain") val chain: Chain = Chain(""),
+    @SerialName("coin") val coin: String = "",
     @SerialName("contract") val contract: String? = null,
-    @SerialName("decimals") val decimals: Int,
-    @SerialName("value") val value: String,
-    @SerialName("human_value") val humanValue: String,
+    @SerialName("decimals") val decimals: Int = 0,
+    @SerialName("value") val value: String = "",
+    @SerialName("human_value") val humanValue: String = "",
     @SerialName("amount_usd") val amountUsd: String? = null,
     @SerialName("timestamp") val timestamp: Long? = null,
 )
 
 @Serializable
 public data class Wallet(
-    @SerialName("address") val address: String,
-    @SerialName("chain_family") val chainFamily: ChainFamily,
+    @SerialName("address") val address: String = "",
+    @SerialName("chain_family") val chainFamily: ChainFamily = ChainFamily(""),
     /** One of the [WalletType] constants. */
     @SerialName("type") val type: String? = null,
     @SerialName("wallet_type") val walletType: String? = null,

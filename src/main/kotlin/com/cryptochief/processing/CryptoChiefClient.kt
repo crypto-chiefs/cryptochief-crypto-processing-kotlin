@@ -13,6 +13,7 @@ import com.cryptochief.processing.services.TransactionsService
 import com.cryptochief.processing.services.WalletsService
 import com.cryptochief.processing.services.WithdrawalsService
 import com.cryptochief.processing.ton.TonRpcClient
+import kotlinx.serialization.DeserializationStrategy
 import java.io.Closeable
 
 /** Entry point to the Crypto Chief processing API. */
@@ -39,6 +40,50 @@ public class CryptoChiefClient(
     public val merchantId: String get() = options.merchantId
 
     public val baseUrl: String get() = options.baseUrl
+
+    /**
+     * Sends a signed request with [method] to [path] and returns the response body as received.
+     * The low-level entry point behind every service method: same signing, retries, clock
+     * correction and error envelope.
+     *
+     * Use it for a route this SDK has no method for, on any Crypto Chief API that takes the same
+     * credentials — the energy API answers two of them on GET:
+     *
+     * ```
+     * val raw = client.request("GET", "/v1/balance")
+     * ```
+     *
+     * [method] is signed and sent with `a`–`z` in upper case. [path] starts with `/` and holds
+     * the route without the base URL; a query goes on it as `?a=1&b=2` and is signed as written,
+     * while the path itself is signed with its `%`-sequences decoded — the form the server reads.
+     * [body] is sent as is and the signature covers those bytes; `GET` and `HEAD` take none.
+     * `Idempotency-Key` comes from the coroutine context, as it does for a service call.
+     *
+     * @throws ApiException
+     * @throws NetworkException
+     * @throws IllegalArgumentException if [method] is empty, [path] does not start with `/` or
+     * holds an invalid `%`-escape, or [body] is not empty on a method that takes none.
+     */
+    public suspend fun request(method: String, path: String, body: ByteArray = ByteArray(0)): ByteArray =
+        transport.request(method, path, body)
+
+    /**
+     * [request], with the response decoded by [responseSerializer]:
+     *
+     * ```
+     * val balance: EnergyBalance = client.request("GET", "/v1/balance", responseSerializer = serializer())
+     * ```
+     *
+     * @throws ApiException
+     * @throws NetworkException
+     * @throws DecodeException if the response body is empty or does not decode.
+     */
+    public suspend fun <T> request(
+        method: String,
+        path: String,
+        body: ByteArray = ByteArray(0),
+        responseSerializer: DeserializationStrategy<T>,
+    ): T = transport.request(method, path, body, responseSerializer)
 
     internal val tonRpc: TonRpcClient by lazy {
         TonRpcClient(

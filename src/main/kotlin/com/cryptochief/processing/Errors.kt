@@ -9,19 +9,20 @@ public sealed class CryptoChiefException(
 /**
  * Server returned a non-2xx response with a structured error envelope.
  *
- * A refusal arrives as `{"ok":false,"error":...,"msg":...}` in one of two shapes: the
- * gateway's own checks put the machine code in `error` and an English sentence in `msg`,
- * while refusals relayed from an upstream service put the generic `SERVICE_ERROR` in
- * `error` and the machine code in `msg`. The SDK folds both into [code], so callers
- * switch on one field and never have to test which shape they got.
+ * The gateway returns `{"ok":false,"error":...,"msg":...}`: its own checks put the machine
+ * code in `error` and an English sentence in `msg`, while refusals relayed from an upstream
+ * service put the generic `SERVICE_ERROR` in `error` and the machine code in `msg`. The
+ * white-label platform returns `{"data":null,"error":{"status":...,"name":...,"message":...,
+ * "details":{"code":...}}}`. The SDK folds all of them into [code].
  *
- * @property code the machine-readable code, and the one to branch on — `error` unless it
- *   is absent or `SERVICE_ERROR`, in which case `msg`; `HTTP_<status>` if the body carried
- *   neither. The constants in [ErrorCode] cover the codes the gateway itself raises.
+ * @property code the machine-readable code, and the one to branch on. Gateway: `error`
+ *   unless it is absent or `SERVICE_ERROR`, in which case `msg`. White-label platform:
+ *   `error.details.code`, else `error.name`. `HTTP_<status>` if the body carried no code. The constants in
+ *   [ErrorCode] cover the codes the gateway itself raises.
  * @property status the HTTP status code.
- * @property description the human-readable half — the sentence from `msg` when the
- *   envelope carried one alongside a distinct code, otherwise the code itself. Display it;
- *   do not branch on it.
+ * @property description the human-readable half — `msg` (gateway) or `error.message`
+ *   (white-label platform) when it differs from the code, otherwise the code itself.
+ *   Display it; do not branch on it.
  * @property raw the response body, verbatim, truncated at 8 KiB.
  */
 public class ApiException(
@@ -110,4 +111,15 @@ public object ErrorCode {
     public const val RESEND_TOO_SOON: String = "RESEND_TOO_SOON"
     /** Static-deposit resend: no webhook was ever queued — the wallet had no callback_url. */
     public const val NO_DELIVERIES: String = "NO_DELIVERIES"
+
+    /** HTTP 400: `Merchant` or an `X-CC-*` header is missing, repeated or malformed. */
+    public const val BAD_AUTH_HEADERS: String = "BAD_AUTH_HEADERS"
+    /** HTTP 401: `X-CC-Timestamp` is more than 300 s away from the server clock; the body carries `server_time`. */
+    public const val SIGNATURE_TIMESTAMP_OUT_OF_RANGE: String = "SIGNATURE_TIMESTAMP_OUT_OF_RANGE"
+    /** HTTP 401: `X-CC-Signature` does not match. */
+    public const val INVALID_SIGNATURE: String = "INVALID_SIGNATURE"
+    /** HTTP 401: the `X-CC-Nonce` was already used. */
+    public const val SIGNATURE_REPLAYED: String = "SIGNATURE_REPLAYED"
+    /** HTTP 413: the request body exceeds the endpoint's limit. */
+    public const val PAYLOAD_TOO_LARGE: String = "PAYLOAD_TOO_LARGE"
 }

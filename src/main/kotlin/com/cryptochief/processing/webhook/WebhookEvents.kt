@@ -1,18 +1,17 @@
 package com.cryptochief.processing.webhook
 
 import com.cryptochief.processing.Chain
-import com.cryptochief.processing.http.CanonicalJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 @Serializable
 public data class PayoutWebhookEvent(
-    @SerialName("event") val event: String,
-    @SerialName("uuid") val uuid: String,
-    @SerialName("order_id") val orderId: String,
+    @SerialName("event") val event: String = "",
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("order_id") val orderId: String = "",
     @SerialName("user_id") val userId: String? = null,
-    @SerialName("status") val status: String,
+    @SerialName("status") val status: String = "",
     @SerialName("amount_requested") val amountRequested: String? = null,
     @SerialName("amount_to_receive") val amountToReceive: String? = null,
     @SerialName("to_address") val toAddress: String? = null,
@@ -33,9 +32,9 @@ public data class PayoutWebhookEvent(
 
 @Serializable
 public data class TransactionWebhookEvent(
-    @SerialName("event") val event: String,
-    @SerialName("uuid") val uuid: String,
-    @SerialName("status") val status: String,
+    @SerialName("event") val event: String = "",
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("status") val status: String = "",
     @SerialName("network") val network: Chain? = null,
     @SerialName("chain_family") val chainFamily: String? = null,
     @SerialName("type") val type: String? = null,
@@ -59,11 +58,11 @@ public data class TransactionWebhookEvent(
 
 @Serializable
 public data class PayInWebhookEvent(
-    @SerialName("event") val event: String,
-    @SerialName("uuid") val uuid: String,
-    @SerialName("order_id") val orderId: String,
+    @SerialName("event") val event: String = "",
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("order_id") val orderId: String = "",
     @SerialName("user_id") val userId: String? = null,
-    @SerialName("status") val status: String,
+    @SerialName("status") val status: String = "",
     @SerialName("prev_status") val prevStatus: String? = null,
     @SerialName("mode") val mode: String? = null,
     @SerialName("amount_crypto") val amountCrypto: String? = null,
@@ -79,9 +78,9 @@ public data class PayInWebhookEvent(
 
 @Serializable
 public data class StaticDepositWebhookEvent(
-    @SerialName("event") val event: String,
-    @SerialName("uuid") val uuid: String,
-    @SerialName("status") val status: String,
+    @SerialName("event") val event: String = "",
+    @SerialName("uuid") val uuid: String = "",
+    @SerialName("status") val status: String = "",
     @SerialName("network") val network: Chain? = null,
     @SerialName("chain_family") val chainFamily: String? = null,
     @SerialName("coin") val coin: String? = null,
@@ -141,19 +140,19 @@ public data class StaticDepositWebhookEvent(
  */
 @Serializable
 public data class SweepWebhookEvent(
-    @SerialName("event") val event: String,
-    @SerialName("task_id") val taskId: String,
-    @SerialName("status") val status: String,
-    @SerialName("wallet_address") val walletAddress: String,
+    @SerialName("event") val event: String = "",
+    @SerialName("task_id") val taskId: String = "",
+    @SerialName("status") val status: String = "",
+    @SerialName("wallet_address") val walletAddress: String = "",
     @SerialName("to_address") val toAddress: String? = null,
     @SerialName("network") val network: Chain? = null,
     @SerialName("chain_family") val chainFamily: String? = null,
-    @SerialName("asset_symbol") val assetSymbol: String,
+    @SerialName("asset_symbol") val assetSymbol: String = "",
     @SerialName("asset_contract") val assetContract: String? = null,
     @SerialName("asset_type") val assetType: String? = null,
     @SerialName("amount_raw") val amountRaw: String? = null,
     @SerialName("amount_human") val amountHuman: String? = null,
-    @SerialName("sweep_tx_hash") val sweepTxHash: String,
+    @SerialName("sweep_tx_hash") val sweepTxHash: String = "",
     @SerialName("gas_pump_tx_hash") val gasPumpTxHash: String? = null,
     @SerialName("sweep_confirmations") val sweepConfirmations: Int = 0,
     @SerialName("confirmed_at") val confirmedAt: String? = null,
@@ -164,27 +163,5 @@ public data class SweepWebhookEvent(
     public companion object {
         /** The only sweep event the platform emits. */
         public const val EVENT_CONFIRMED: String = "sweep.confirmed"
-    }
-}
-
-/** Verify + decode in one call. */
-public object WebhookHandler {
-    public inline fun <reified T> handle(
-        apiKey: String,
-        body: ByteArray,
-        signatureHeader: String?,
-    ): T {
-        WebhookVerifier.requireValid(apiKey, body, signatureHeader)
-        return try {
-            CanonicalJson.json.decodeFromString(
-                kotlinx.serialization.serializer(),
-                body.toString(Charsets.UTF_8),
-            )
-        } catch (e: Exception) {
-            throw com.cryptochief.processing.DecodeException(
-                "cryptochief: webhook decode failed: ${e.message}",
-                e,
-            )
-        }
     }
 }

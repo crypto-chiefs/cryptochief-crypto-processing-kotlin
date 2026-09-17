@@ -90,7 +90,7 @@ public data class PayoutFeeInfo(
 /** One wallet the payout is sent from. */
 @Serializable
 public data class PayoutSource(
-    @SerialName("address") val address: String,
+    @SerialName("address") val address: String = "",
     @Deprecated("Not sent by the API; always null. Use amountCrypto.", ReplaceWith("amountCrypto"))
     @SerialName("amount") val amount: String? = null,
     @SerialName("coin") val coin: String? = null,
@@ -164,9 +164,9 @@ public data class EstimatePayoutResponse(
 
 @Serializable
 public data class PayoutInfo(
-    @SerialName("uuid") val uuid: String,
+    @SerialName("uuid") val uuid: String = "",
     @SerialName("order_id") val orderId: String = "",
-    @SerialName("status") val status: String,
+    @SerialName("status") val status: String = "",
     @Deprecated("Not sent by the API; always null. Use sources[].network.")
     @SerialName("network") val network: Chain? = null,
     @Deprecated("Not sent by the API; always null. Use sources[].coin.")
@@ -218,9 +218,9 @@ public data class BatchExecuteRequest(
 
 @Serializable
 public data class BatchItemResult(
-    @SerialName("index") val index: Int,
-    @SerialName("order_id") val orderId: String,
-    @SerialName("status") val status: String,
+    @SerialName("index") val index: Int = 0,
+    @SerialName("order_id") val orderId: String = "",
+    @SerialName("status") val status: String = "",
     @SerialName("uuid") val uuid: String? = null,
     @SerialName("error") val error: String? = null,
 )
