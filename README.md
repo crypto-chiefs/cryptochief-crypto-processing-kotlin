@@ -12,7 +12,7 @@ Kotlin / JVM SDK for the [Crypto Chief](https://crypto-chief.com/processing/) cr
 
 ```kotlin
 dependencies {
-    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.9.0")
+    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.10.0")
 }
 ```
 
@@ -20,7 +20,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.9.0'
+    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.10.0'
 }
 ```
 
@@ -30,7 +30,7 @@ dependencies {
 <dependency>
   <groupId>com.crypto-chief</groupId>
   <artifactId>cryptochief-crypto-processing-kotlin</artifactId>
-  <version>0.9.0</version>
+  <version>0.10.0</version>
 </dependency>
 ```
 
@@ -640,7 +640,7 @@ import java.time.Duration
 val client = CryptoChiefClient.create {
     merchantId        = "..."
     apiKey            = "..."
-    baseUrl           = "https://staging-api.crypto-chief.com"
+    baseUrl           = "https://api-processing.crypto-chief.com" // the default; override for a white-label installation
     requestTimeout    = Duration.ofSeconds(30)
     maxRetries        = 5
     initialRetryDelay = Duration.ofMillis(250)
