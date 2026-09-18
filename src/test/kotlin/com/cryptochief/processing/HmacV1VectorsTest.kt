@@ -111,7 +111,8 @@ class HmacV1VectorsTest {
                 ),
             )
             assertEquals(
-                v.signature,
+                // The vector file carries the bare hex; the header value adds the prefix.
+                RequestSigner.HMAC_V1_SIGNATURE_PREFIX + v.signature,
                 RequestSigner.signHmacV1(
                     apiKey = v.apiKey,
                     timestamp = v.timestamp,

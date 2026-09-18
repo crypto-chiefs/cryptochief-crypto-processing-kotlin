@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.12.0] — 2026-09-19
+
+- **Breaking for direct callers of `RequestSigner.signHmacV1()`:** it now returns the full `X-CC-Signature` header value (`v1=` + lowercase hex), matching `RequestSigner.signWebhookV1()`. Requests sent through the client are unchanged — the header on the wire is byte-for-byte the same
 ## [0.11.0] — 2026-09-19
 
 The fee of a transfer without signing it, TRON energy for rent, native coin for

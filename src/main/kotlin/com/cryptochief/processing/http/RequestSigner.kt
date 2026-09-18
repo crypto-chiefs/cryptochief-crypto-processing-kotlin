@@ -65,8 +65,9 @@ public object RequestSigner {
     }
 
     /**
+     * The `X-CC-Signature` header value of a request: [HMAC_V1_SIGNATURE_PREFIX] followed by
      * `hex(HMAC-SHA256(key = apiKey, message = hmacV1StringToSign(...)))`, 64 lowercase hex
-     * characters. `X-CC-Signature` is [HMAC_V1_SIGNATURE_PREFIX] followed by this value.
+     * characters.
      *
      * @throws IllegalArgumentException if [apiKey] is empty or holds only spaces and tabs, or if
      * a value contains CR or LF.
@@ -85,7 +86,7 @@ public object RequestSigner {
     ): String {
         requireApiKey(apiKey)
         val stringToSign = hmacV1StringToSign(timestamp, nonce, method, path, query, merchant, idempotencyKey, body)
-        return hmacSha256(apiKey, stringToSign).toHexLower()
+        return HMAC_V1_SIGNATURE_PREFIX + hmacSha256(apiKey, stringToSign).toHexLower()
     }
 
     /**

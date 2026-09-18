@@ -147,4 +147,27 @@ class HmacV1SigningTest {
         assertTrue(Regex("^[0-9a-f]{32}$").matches(a), a)
         assertNotEquals(a, b)
     }
+
+    /** What [RequestSigner.signHmacV1] returns is the header value: set as is, it verifies. */
+    @Test
+    fun `the signed header value verifies as is`() {
+        val signature = RequestSigner.signHmacV1(apiKey, timestamp, nonce, "POST", "/v1/credits/balance", "", merchant, "", ByteArray(0))
+        assertTrue(Regex("^v1=[0-9a-f]{64}$").matches(signature), signature)
+        val outcome = HmacV1Gateway.check(
+            apiKey = apiKey,
+            method = "POST",
+            path = "/v1/credits/balance",
+            query = "",
+            headers = mapOf(
+                "Merchant" to listOf(merchant),
+                RequestSigner.HEADER_TIMESTAMP to listOf(timestamp),
+                RequestSigner.HEADER_NONCE to listOf(nonce),
+                RequestSigner.HEADER_HMAC_SIGNATURE to listOf(signature),
+            ),
+            body = ByteArray(0),
+            now = timestamp.toLong(),
+            merchant = merchant,
+        )
+        assertEquals(HmacV1Outcome.OK, outcome)
+    }
 }

@@ -76,7 +76,7 @@ class HmacTransportTest {
         val nonce = recorded.getHeader("X-CC-Nonce")!!
         assertTrue(Regex("^[0-9]+$").matches(timestamp), timestamp)
         assertTrue(Regex("^[0-9a-f]{32}$").matches(nonce), nonce)
-        val expected = "v1=" + RequestSigner.signHmacV1(
+        val expected = RequestSigner.signHmacV1(
             apiKey = apiKey,
             timestamp = timestamp,
             nonce = nonce,
@@ -118,7 +118,7 @@ class HmacTransportTest {
         val recorded = server.takeRequest()
         assertEquals("/api$path", recorded.path)
         val body = recorded.body.clone().readByteArray()
-        fun signedOver(signedPath: String): String = "v1=" + RequestSigner.signHmacV1(
+        fun signedOver(signedPath: String): String = RequestSigner.signHmacV1(
             apiKey = apiKey,
             timestamp = recorded.getHeader("X-CC-Timestamp")!!,
             nonce = recorded.getHeader("X-CC-Nonce")!!,
@@ -152,7 +152,7 @@ class HmacTransportTest {
             val recorded = server.takeRequest()
             val body = recorded.body.readByteArray()
             assertEquals(merchant, recorded.getHeader("Merchant"))
-            val expected = "v1=" + RequestSigner.signHmacV1(
+            val expected = RequestSigner.signHmacV1(
                 apiKey = apiKey,
                 timestamp = "1789430400",
                 nonce = recorded.getHeader("X-CC-Nonce")!!,
@@ -294,7 +294,7 @@ class HmacTransportTest {
 
         val recorded = server.takeRequest()
         assertEquals("$sentPath?$sentQuery", recorded.path)
-        val expected = "v1=" + RequestSigner.signHmacV1(
+        val expected = RequestSigner.signHmacV1(
             apiKey = apiKey,
             timestamp = recorded.getHeader("X-CC-Timestamp")!!,
             nonce = recorded.getHeader("X-CC-Nonce")!!,
@@ -316,7 +316,7 @@ class HmacTransportTest {
 
         val recorded = server.takeRequest()
         assertEquals("/v1/%D0%B7%D0%B0%D0%BA%D0%B0%D0%B7/%E2%84%961?note=%D1%82%D0%B5%D1%81%D1%82&plus=a+b", recorded.path)
-        val expected = "v1=" + RequestSigner.signHmacV1(
+        val expected = RequestSigner.signHmacV1(
             apiKey = apiKey,
             timestamp = recorded.getHeader("X-CC-Timestamp")!!,
             nonce = recorded.getHeader("X-CC-Nonce")!!,
@@ -415,7 +415,7 @@ class HmacTransportTest {
 
         val timestamp = (System.currentTimeMillis() / 1000).toString()
         val nonce = RequestSigner.newNonce()
-        val signature = "v1=" + RequestSigner.signHmacV1(apiKey, timestamp, nonce, "POST", path, "", merchant, "", body.toByteArray())
+        val signature = RequestSigner.signHmacV1(apiKey, timestamp, nonce, "POST", path, "", merchant, "", body.toByteArray())
         val signed: okhttp3.Request.Builder.() -> Unit = {
             header("X-CC-Timestamp", timestamp)
             header("X-CC-Nonce", nonce)

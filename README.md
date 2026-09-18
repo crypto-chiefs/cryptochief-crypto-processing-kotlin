@@ -12,7 +12,7 @@ Kotlin / JVM SDK for the [Crypto Chief](https://crypto-chief.com/processing/) cr
 
 ```kotlin
 dependencies {
-    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.11.0")
+    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.12.0")
 }
 ```
 
@@ -20,7 +20,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.11.0'
+    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.12.0'
 }
 ```
 
@@ -30,7 +30,7 @@ dependencies {
 <dependency>
   <groupId>com.crypto-chief</groupId>
   <artifactId>cryptochief-crypto-processing-kotlin</artifactId>
-  <version>0.11.0</version>
+  <version>0.12.0</version>
 </dependency>
 ```
 
@@ -809,7 +809,8 @@ Timestamp, nonce and signature are computed for every attempt. On
 and repeats the request.
 
 `RequestSigner.hmacV1StringToSign()` and `RequestSigner.signHmacV1()` compute the same values
-outside the client.
+outside the client; `signHmacV1()` returns the full `X-CC-Signature` header value (`v1=` + hex),
+set it as is.
 
 ### Low-level request
 

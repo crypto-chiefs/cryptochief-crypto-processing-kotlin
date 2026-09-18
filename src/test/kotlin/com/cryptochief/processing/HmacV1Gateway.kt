@@ -207,7 +207,7 @@ class HmacV1Gateway(
             path: String = RequestSigner.pathToSign(recorded.requestUrl!!.encodedPath),
         ): ByteArray {
             val body = recorded.body.clone().readByteArray()
-            val expected = "v1=" + RequestSigner.signHmacV1(
+            val expected = RequestSigner.signHmacV1(
                 apiKey = apiKey,
                 timestamp = recorded.getHeader(RequestSigner.HEADER_TIMESTAMP)!!,
                 nonce = recorded.getHeader(RequestSigner.HEADER_NONCE)!!,

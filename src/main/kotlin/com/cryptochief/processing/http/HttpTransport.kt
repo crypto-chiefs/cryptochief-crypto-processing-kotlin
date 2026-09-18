@@ -143,7 +143,7 @@ internal class HttpTransport(
                 .header(HEADER_MERCHANT, merchant)
                 .header(RequestSigner.HEADER_TIMESTAMP, timestamp)
                 .header(RequestSigner.HEADER_NONCE, nonce)
-                .header(RequestSigner.HEADER_HMAC_SIGNATURE, RequestSigner.HMAC_V1_SIGNATURE_PREFIX + hmac)
+                .header(RequestSigner.HEADER_HMAC_SIGNATURE, hmac)
                 .apply {
                     if (idempotencyKey.isNotEmpty()) {
                         header(RequestSigner.HEADER_IDEMPOTENCY_KEY, idempotencyKey)
