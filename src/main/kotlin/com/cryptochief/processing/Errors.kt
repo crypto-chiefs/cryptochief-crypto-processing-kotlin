@@ -13,11 +13,14 @@ public sealed class CryptoChiefException(
  * code in `error` and an English sentence in `msg`, while refusals relayed from an upstream
  * service put the generic `SERVICE_ERROR` in `error` and the machine code in `msg`. The
  * white-label platform returns `{"data":null,"error":{"status":...,"name":...,"message":...,
- * "details":{"code":...}}}`. The SDK folds all of them into [code].
+ * "details":{"code":...}}}`. An order body on a non-2xx (energy rent, native buy) carries the
+ * machine code in `error_code` and the human text in `error`. The SDK folds all of them into
+ * [code].
  *
  * @property code the machine-readable code, and the one to branch on. Gateway: `error`
  *   unless it is absent or `SERVICE_ERROR`, in which case `msg`. White-label platform:
- *   `error.details.code`, else `error.name`. `HTTP_<status>` if the body carried no code. The constants in
+ *   `error.details.code`, else `error.name`. Order body: `error_code`. `HTTP_<status>` if
+ *   the body carried no code. The constants in
  *   [ErrorCode] cover the codes the gateway itself raises.
  * @property status the HTTP status code.
  * @property description the human-readable half — `msg` (gateway) or `error.message`

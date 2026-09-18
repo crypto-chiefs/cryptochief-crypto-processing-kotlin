@@ -12,7 +12,7 @@ Kotlin / JVM SDK for the [Crypto Chief](https://crypto-chief.com/processing/) cr
 
 ```kotlin
 dependencies {
-    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.10.0")
+    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.11.0")
 }
 ```
 
@@ -20,7 +20,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.10.0'
+    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.11.0'
 }
 ```
 
@@ -30,7 +30,7 @@ dependencies {
 <dependency>
   <groupId>com.crypto-chief</groupId>
   <artifactId>cryptochief-crypto-processing-kotlin</artifactId>
-  <version>0.10.0</version>
+  <version>0.11.0</version>
 </dependency>
 ```
 
@@ -84,7 +84,7 @@ fun main() = runBlocking {
 | Service | Endpoints |
 | ------- | --------- |
 | `client.payouts` | estimate, execute, info, history, batchEstimate, batchExecute |
-| `client.transactions` | sign, execute, info, history + EVM/TRON/Solana/TON helpers |
+| `client.transactions` | estimate, sign, execute, info, history + EVM/TRON/Solana/TON helpers |
 | `client.payIns` | create, info, history, cancel, selectAsset, resetAsset |
 | `client.wallets` | generate, list, info, history, freeze, rebindMaster, setCallbackUrl, clearCallbackUrl, setLabel, clearLabel, decryptPrivateKey |
 | `client.sweeps` | force, history, walletHistory, settings, updateSettings |
@@ -93,6 +93,8 @@ fun main() = runBlocking {
 | `client.blockchain` | contractsAvailable, contractsList, blockchainsList, walletBalance, transactionStatus |
 | `client.currencies` | fiatToCrypto, cryptoToFiat, fiats, cryptos |
 | `client.credits` | balance, topup |
+| `client.energy` | quote, rent, order |
+| `client.native` | quote, buy, order |
 
 ## Invoices (PayIn)
 
@@ -404,6 +406,119 @@ so "nothing to list" reaches the wire as a literal `null` rather than as `[]`. A
 read that as empty — an empty list, or an empty `CryptoCurrencies` — and so does a `null`
 standing in for one exchange's tickers inside `byExchange`. A method promising a list
 answers with one.
+
+## Estimating the network fee
+
+`transactions.estimate` prices a native or token transfer without signing or broadcasting
+anything — the request is `SignTransactionRequest` minus `url_callback`. The call itself is
+billed to the credits balance: 10 000 credits (0.001 USD) per estimate:
+
+```kotlin
+import com.cryptochief.processing.Amount
+import com.cryptochief.processing.Chain
+import com.cryptochief.processing.models.EstimateTransactionRequest
+import com.cryptochief.processing.models.TxType
+
+val quote = client.transactions.estimate(
+    EstimateTransactionRequest(
+        network     = Chain.TRON_MAINNET,
+        fromAddress = "T...",
+        type        = TxType.TOKEN,
+        toAddress   = "T...",
+        value       = Amount.toBase("12.50", 6).toString(),
+        contract    = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",  // USDT
+    ),
+)
+println("fee: ${quote.estimatedFee} TRX (~${quote.estimatedFeeFiat} USD)")
+println("the sender must hold ${quote.required} TRX")
+```
+
+`estimatedFee` is the network fee in the native coin; `required` is all the native coin the
+from-wallet must hold — fee plus `value` for a native transfer, the fee alone for a token.
+The `*Fiat` fields are the same in USD and come back empty when no rate is available.
+`type = contract` is refused with `CONTRACT_ESTIMATE_UNSUPPORTED`.
+
+On TRON the answer also carries a fee breakdown: `feeExpected` (what the fee is expected to be
+with the wallet's current energy pool — staked, delegated, rented — counted in; not a guarantee,
+the pool can run out), `feeLimit` (the on-chain cap written into the transaction), `energy`
+(units needed) and `energyFee` + `bandwidthFee` + `activationFee`, which add up to the gross
+`estimatedFee`. `activationFee` appears only on a native transfer to a not-yet-activated address.
+On every other network these fields are absent — `null`, never `""`.
+
+## Renting TRON energy
+
+Renting energy for a transfer is cheaper than burning TRX for it. `energy.quote` prices the
+rent against burning — free, nothing billed; `energy.rent` places the rent and bills the credits
+balance; `energy.order` reads a rent back by its idempotency key:
+
+```kotlin
+import com.cryptochief.processing.models.EnergyQuoteRequest
+import com.cryptochief.processing.models.EnergyRentRequest
+import com.cryptochief.processing.withIdempotencyKey
+
+// The address that will SEND the transfer — the energy is delegated to it.
+val quote = client.energy.quote(EnergyQuoteRequest(receiveAddress = "T..."))
+println("rent ${quote.priceTrx} TRX vs burn ${quote.burnPriceTrx} — saves ${quote.savingTrx}")
+
+val order = withIdempotencyKey("energy-2026-09-18-0001") {
+    client.energy.rent(
+        EnergyRentRequest(receiveAddress = "T...", quoteRef = quote.ref),
+    )
+}
+println(order.status)   // "delivered": the energy is already delegated
+
+// Later, or after an "unresolved" reply — read the same order back by its key:
+val again = client.energy.order("energy-2026-09-18-0001")
+```
+
+`rent` is synchronous: by the time it returns, the energy is delegated or the refusal is known
+(`status` is `delivered`, `refused` — see `error` and `errorCode` — or `unresolved`). The
+`Idempotency-Key` is **required** and deduplicates the rent, so a retry after a network failure
+or a 502 is safe and reads the same order back. A non-2xx answer still returns the order when
+one exists: a `refused` order comes back on a 502 — or on a 402 with
+`errorCode = INSUFFICIENT_CREDITS` when the credits balance is short — and an `unresolved` one
+on a 409 with `needsAttention = true` (do not retry, it needs a human). Only a plain error
+envelope (`{"ok":false,...}`, e.g. an expired quote) throws an `ApiException`. On a `refused`
+order nothing was billed and `priceUsd`, `credits` and `trxUsd` are `null`.
+
+## Buying native coin
+
+The platform sells the native coin of a network (TRX, ETH, BNB, SOL, TON, ...) from its own
+liquidity, billed to your API credits. The price includes the coins at the market rate and the
+fee of the platform's own transfer to your address, so `receiveAddress` can be any address —
+`totalUsd` is the full sale price and `credits` the exact amount the buy bills. `native.quote`
+prices a buy — free, nothing billed; `native.buy` places it and bills the credits balance;
+`native.order` reads a buy back by its idempotency key:
+
+```kotlin
+import com.cryptochief.processing.Chain
+import com.cryptochief.processing.models.NativeBuyRequest
+import com.cryptochief.processing.models.NativeQuoteRequest
+import com.cryptochief.processing.withIdempotencyKey
+
+// Any receiving address — the merchant pays the transfer fee.
+val quote = client.native.quote(
+    NativeQuoteRequest(network = Chain.ETH_MAINNET, receiveAddress = "0x...", amount = "0.05"),
+)
+println("${quote.amount} ETH costs ${quote.totalUsd} USD = ${quote.credits} credits")
+
+val order = withIdempotencyKey("native-2026-09-18-0001") {
+    client.native.buy(NativeBuyRequest(quoteRef = quote.ref))
+}
+println(order.status)   // "delivered": the coins are already sent, see order.txHash
+
+// Later, or after an "unresolved" reply — read the same order back by its key:
+val again = client.native.order("native-2026-09-18-0001")
+```
+
+`buy` is synchronous and idempotent like `energy.rent`: a quote holds for about 90 seconds and is
+single-use (a 409 `QUOTE_EXPIRED` / `QUOTE_ALREADY_USED` error envelope throws an `ApiException`
+— quote again), a retry after a network failure or a 502 is safe under the same key, and a
+non-2xx answer still returns the order when one exists: a `refused` order on a 502 — or on a 402
+with `errorCode = INSUFFICIENT_CREDITS` when the credits balance needs a top-up — and an
+`unresolved` one on a 409 with `needsAttention = true`, which must not be retried. On a
+`refused` order nothing was billed and `txHash`, `totalUsd`, `credits` and the other billing
+fields are `null`.
 
 ## Contract calls
 

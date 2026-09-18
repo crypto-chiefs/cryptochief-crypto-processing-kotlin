@@ -1,6 +1,8 @@
 package com.cryptochief.processing
 
+import com.cryptochief.processing.models.EstimateTransactionRequest
 import com.cryptochief.processing.models.TxStatus
+import com.cryptochief.processing.models.TxType
 import com.cryptochief.processing.poll.waitForTransaction
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -8,9 +10,11 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import java.time.Duration
 
 class TransactionsServiceTest {
@@ -51,6 +55,154 @@ class TransactionsServiceTest {
           "expires_at": "2026-09-14T10:10:00Z", "created_at": "2026-09-14T10:00:00Z"
         }
     """.trimIndent()
+
+    @Test
+    fun `estimate of a native transfer prices fee plus value`() = runBlocking {
+        enqueue(
+            """
+            {"network": "ETH_MAINNET", "chain_family": "EVM", "type": "native",
+             "from_address": "0xfrom", "to_address": "0xto",
+             "estimated_fee": "0.00045", "estimated_fee_fiat": "1.27",
+             "required": "0.01045", "required_fiat": "29.50"}
+            """.trimIndent(),
+        )
+
+        val out = client.transactions.estimate(
+            EstimateTransactionRequest(
+                network = Chain.ETH_MAINNET,
+                fromAddress = "0xfrom",
+                toAddress = "0xto",
+                value = "10000000000000000",
+            ),
+        )
+
+        assertEquals(Chain.ETH_MAINNET, out.network)
+        assertEquals("EVM", out.chainFamily)
+        assertEquals(TxType.NATIVE, out.type)
+        assertEquals("0.00045", out.estimatedFee)
+        assertEquals("1.27", out.estimatedFeeFiat)
+        assertEquals("0.01045", out.required)
+        assertEquals("29.50", out.requiredFiat)
+
+        val sent = server.takeRequest().body.readByteArray().toString(Charsets.UTF_8)
+        assertFalse("url_callback" in sent)
+        // The default type stays home (`encodeDefaults = false`); the server reads it as native.
+        assertFalse("\"type\"" in sent)
+    }
+
+    @Test
+    fun `estimate of a token transfer prices the fee alone and tolerates a missing rate`() = runBlocking {
+        enqueue(
+            """
+            {"network": "TRON_MAINNET", "chain_family": "TRON", "type": "token",
+             "from_address": "TFrom", "to_address": "TTo",
+             "estimated_fee": "14.5", "estimated_fee_fiat": "",
+             "required": "14.5", "required_fiat": ""}
+            """.trimIndent(),
+        )
+
+        val out = client.transactions.estimate(
+            EstimateTransactionRequest(
+                network = Chain.TRON_MAINNET,
+                fromAddress = "TFrom",
+                type = TxType.TOKEN,
+                toAddress = "TTo",
+                value = "12500000",
+                contract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+            ),
+        )
+
+        assertEquals(TxType.TOKEN, out.type)
+        assertEquals("14.5", out.estimatedFee)
+        assertEquals("", out.estimatedFeeFiat)
+        assertEquals("14.5", out.required)
+        assertEquals("", out.requiredFiat)
+    }
+
+    @Test
+    fun `estimate of a TRON transfer carries the energy breakdown`() = runBlocking {
+        enqueue(
+            """
+            {"network": "TRON_MAINNET", "chain_family": "TRON", "type": "token",
+             "from_address": "TFrom", "to_address": "TTo",
+             "estimated_fee": "13.8", "estimated_fee_fiat": "3.93",
+             "required": "13.8", "required_fiat": "3.93",
+             "fee_expected": "0.0", "fee_limit": "13.8", "energy": 131000,
+             "energy_fee": "13.1", "bandwidth_fee": "0.7", "activation_fee": "0.0"}
+            """.trimIndent(),
+        )
+
+        val out = client.transactions.estimate(
+            EstimateTransactionRequest(
+                network = Chain.TRON_MAINNET,
+                fromAddress = "TFrom",
+                type = TxType.TOKEN,
+                toAddress = "TTo",
+                value = "12500000",
+                contract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+            ),
+        )
+
+        assertEquals("0.0", out.feeExpected)
+        assertEquals("13.8", out.feeLimit)
+        assertEquals(131_000, out.energy)
+        assertEquals("13.1", out.energyFee)
+        assertEquals("0.7", out.bandwidthFee)
+        assertEquals("0.0", out.activationFee)
+    }
+
+    @Test
+    fun `estimate of a non-TRON transfer has no energy breakdown`() = runBlocking {
+        enqueue(
+            """
+            {"network": "ETH_MAINNET", "chain_family": "EVM", "type": "native",
+             "from_address": "0xfrom", "to_address": "0xto",
+             "estimated_fee": "0.00045", "estimated_fee_fiat": "1.27",
+             "required": "0.01045", "required_fiat": "29.50"}
+            """.trimIndent(),
+        )
+
+        val out = client.transactions.estimate(
+            EstimateTransactionRequest(
+                network = Chain.ETH_MAINNET,
+                fromAddress = "0xfrom",
+                toAddress = "0xto",
+                value = "10000000000000000",
+            ),
+        )
+
+        assertEquals("0.00045", out.estimatedFee)
+        assertNull(out.feeExpected)
+        assertNull(out.feeLimit)
+        assertNull(out.energy)
+        assertNull(out.energyFee)
+        assertNull(out.bandwidthFee)
+        assertNull(out.activationFee)
+    }
+
+    @Test
+    fun `estimate of a contract call passes the refusal through`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"ok":false,"error":"CONTRACT_ESTIMATE_UNSUPPORTED","msg":"contract calls cannot be estimated"}""",
+            ),
+        )
+
+        val ex = assertThrows<ApiException> {
+            runBlocking {
+                client.transactions.estimate(
+                    EstimateTransactionRequest(
+                        network = Chain.ETH_MAINNET,
+                        fromAddress = "0xfrom",
+                        type = TxType.CONTRACT,
+                    ),
+                )
+            }
+        }
+
+        assertEquals("CONTRACT_ESTIMATE_UNSUPPORTED", ex.code)
+        assertEquals(400, ex.status)
+    }
 
     @Test
     fun `info carries the count it was confirmed at and the threshold applied`() = runBlocking {

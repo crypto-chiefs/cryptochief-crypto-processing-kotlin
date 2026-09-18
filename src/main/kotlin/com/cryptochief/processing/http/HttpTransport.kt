@@ -213,7 +213,9 @@ internal class HttpTransport(
      *   `msg` when `error` is absent or `SERVICE_ERROR`;
      * - white-label platform: `{"data":null,"error":{"status":...,"name":...,"message":...,
      *   "details":{"code":"<CODE>","server_time":...}},"server_time":...}`; the code is
-     *   `error.details.code`, else `error.name`.
+     *   `error.details.code`, else `error.name`;
+     * - an order body on a non-2xx (energy rent, native buy): `error_code` is the machine
+     *   code and `error` the sanitized human text.
      *
      * `server_time` is taken from the top level, then from `error.details`.
      */
@@ -232,9 +234,15 @@ internal class HttpTransport(
                     message = error.string("message")?.takeIf { it != code }
                     serverTime = obj.number("server_time") ?: details?.number("server_time")
                 } else {
+                    val errorCodeField = (obj["error_code"] as? JsonPrimitive)?.contentOrNull
                     val errorField = (error as? JsonPrimitive)?.contentOrNull
                     val msgField = (obj["msg"] as? JsonPrimitive)?.contentOrNull
-                    when {
+                    if (!errorCodeField.isNullOrEmpty()) {
+                        // An order body on a non-2xx: `error_code` is the machine code,
+                        // `error` the sanitized human text.
+                        code = errorCodeField
+                        message = errorField?.takeIf { it != errorCodeField }
+                    } else when {
                         msgField.isNullOrEmpty() || msgField == errorField -> code = errorField
                         errorField.isNullOrEmpty() || errorField == ErrorCode.SERVICE_ERROR -> code = msgField
                         else -> {

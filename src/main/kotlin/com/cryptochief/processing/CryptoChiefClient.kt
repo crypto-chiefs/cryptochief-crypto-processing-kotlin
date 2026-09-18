@@ -4,6 +4,8 @@ import com.cryptochief.processing.http.HttpTransport
 import com.cryptochief.processing.services.BlockchainService
 import com.cryptochief.processing.services.CreditsService
 import com.cryptochief.processing.services.CurrenciesService
+import com.cryptochief.processing.services.EnergyService
+import com.cryptochief.processing.services.NativeService
 import com.cryptochief.processing.services.PayInsService
 import com.cryptochief.processing.services.PayoutsService
 import com.cryptochief.processing.services.StaticDepositsService
@@ -35,6 +37,8 @@ public class CryptoChiefClient(
     public val blockchain: BlockchainService = BlockchainService(transport)
     public val currencies: CurrenciesService = CurrenciesService(transport)
     public val credits: CreditsService = CreditsService(transport)
+    public val energy: EnergyService = EnergyService(transport)
+    public val native: NativeService = NativeService(transport)
     public val webhooks: WebhooksService = WebhooksService(transport)
 
     public val merchantId: String get() = options.merchantId

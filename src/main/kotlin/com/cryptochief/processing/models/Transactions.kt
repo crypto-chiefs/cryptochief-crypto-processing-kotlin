@@ -66,6 +66,55 @@ public data class ExecuteTransactionRequest(
     @SerialName("signed_tx_hex") val signedTxHex: String? = null,
 )
 
+/** [SignTransactionRequest] without `url_callback` and `calls`: nothing is signed or sent. */
+@Serializable
+public data class EstimateTransactionRequest(
+    @SerialName("network") val network: Chain,
+    @SerialName("from_address") val fromAddress: String,
+    @SerialName("type") val type: String = TxType.NATIVE,
+    @SerialName("to_address") val toAddress: String? = null,
+    @SerialName("value") val value: String? = null,
+    @SerialName("contract") val contract: String? = null,
+)
+
+/**
+ * Price of a native or token transfer. On TRON the `fee_*`/`energy` breakdown is present and
+ * [energyFee] + [bandwidthFee] + [activationFee] add up to the gross [estimatedFee]; on every
+ * other network those fields are absent.
+ */
+@Serializable
+public data class EstimateTransactionResponse(
+    @SerialName("network") val network: Chain? = null,
+    @SerialName("chain_family") val chainFamily: String = "",
+    @SerialName("type") val type: String = "",
+    @SerialName("from_address") val fromAddress: String = "",
+    @SerialName("to_address") val toAddress: String = "",
+    /** Estimated network fee in the native coin, human-readable. */
+    @SerialName("estimated_fee") val estimatedFee: String = "",
+    /** [estimatedFee] in USD; empty when no rate is available. */
+    @SerialName("estimated_fee_fiat") val estimatedFeeFiat: String = "",
+    /** Native coin the from-wallet must hold: fee + value for a native transfer, the fee alone for a token. */
+    @SerialName("required") val required: String = "",
+    /** [required] in USD; empty when no rate is available. */
+    @SerialName("required_fiat") val requiredFiat: String = "",
+    /**
+     * Fee expected with the wallet's current energy pool (staked, delegated and rented energy)
+     * counted in. TRON only, absent on other networks. Not a guarantee: the pool can run out
+     * before the transaction is broadcast, and the burn falls back to [estimatedFee].
+     */
+    @SerialName("fee_expected") val feeExpected: String? = null,
+    /** On-chain fee cap written into the transaction (`fee_limit`). TRON only. */
+    @SerialName("fee_limit") val feeLimit: String? = null,
+    /** Energy units the transfer needs. TRON only. */
+    @SerialName("energy") val energy: Long? = null,
+    /** TRX burned for energy when the pool does not cover it. TRON only. */
+    @SerialName("energy_fee") val energyFee: String? = null,
+    /** TRX burned for bandwidth. TRON only. */
+    @SerialName("bandwidth_fee") val bandwidthFee: String? = null,
+    /** TRX for activating the recipient address — a native transfer to a new address only. TRON only. */
+    @SerialName("activation_fee") val activationFee: String? = null,
+)
+
 @Serializable
 public data class TransactionInfo(
     @SerialName("uuid") val uuid: String = "",

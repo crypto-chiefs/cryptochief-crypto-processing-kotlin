@@ -5,11 +5,15 @@ import com.cryptochief.processing.models.ContractCall
 import com.cryptochief.processing.models.ConvertRequest
 import com.cryptochief.processing.models.CreatePayInRequest
 import com.cryptochief.processing.models.CreditsTopupRequest
+import com.cryptochief.processing.models.EnergyQuoteRequest
+import com.cryptochief.processing.models.EnergyRentRequest
 import com.cryptochief.processing.models.EstimatePayoutRequest
 import com.cryptochief.processing.models.ExecutePayoutRequest
 import com.cryptochief.processing.models.ExecuteTransactionRequest
 import com.cryptochief.processing.models.GenerateWalletRequest
 import com.cryptochief.processing.models.HistoryQuery
+import com.cryptochief.processing.models.NativeBuyRequest
+import com.cryptochief.processing.models.NativeQuoteRequest
 import com.cryptochief.processing.models.SelectAssetRequest
 import com.cryptochief.processing.models.SignTransactionRequest
 import com.cryptochief.processing.models.StaticDepositHistoryQuery
@@ -113,6 +117,28 @@ class RequestBodyTest {
         },
         Case("credits.topup, null URLs", "/v1/credits/topup", """{"amount":"10","currency":"USDT"}""") {
             client.credits.topup(CreditsTopupRequest("10", "USDT", urlSuccess = null, urlError = null))
+        },
+        Case("energy.quote, every optional null", "/v1/energy/quote", """{"receive_address":"TFrom"}""") {
+            client.energy.quote(EnergyQuoteRequest("TFrom", null, null))
+        },
+        Case("energy.rent, null energy, duration and quote_ref", "/v1/energy/rent", """{"receive_address":"TFrom"}""") {
+            withIdempotencyKey("energy-req-body-test") {
+                client.energy.rent(EnergyRentRequest("TFrom", null, null, null))
+            }
+        },
+        Case("energy.order", "/v1/energy/order", """{"key":"k1"}""") {
+            client.energy.order("k1")
+        },
+        Case("native.quote", "/v1/native/quote", """{"amount":"0.05","network":"ETH_MAINNET","receive_address":"$evm"}""") {
+            client.native.quote(NativeQuoteRequest(Chain.ETH_MAINNET, evm, "0.05"))
+        },
+        Case("native.buy, quote_ref only", "/v1/native/buy", """{"quote_ref":"nq-1"}""") {
+            withIdempotencyKey("native-req-body-test") {
+                client.native.buy(NativeBuyRequest(null, null, null, "nq-1"))
+            }
+        },
+        Case("native.order", "/v1/native/order", """{"key":"k1"}""") {
+            client.native.order("k1")
         },
         Case("currencies.fiatToCrypto, null provider", "/v1/currencies/convert/fiat-crypto", """{"amount":"1","from":"USD","to":"BTC"}""") {
             client.currencies.fiatToCrypto(ConvertRequest(null, "USD", "BTC", "1"))

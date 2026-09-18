@@ -5,6 +5,8 @@ import com.cryptochief.processing.CryptoChiefClient
 import com.cryptochief.processing.evm.EvmAbi
 import com.cryptochief.processing.http.HttpTransport
 import com.cryptochief.processing.models.ContractCall
+import com.cryptochief.processing.models.EstimateTransactionRequest
+import com.cryptochief.processing.models.EstimateTransactionResponse
 import com.cryptochief.processing.models.ExecuteTransactionRequest
 import com.cryptochief.processing.models.HistoryQuery
 import com.cryptochief.processing.models.SignTransactionRequest
@@ -27,6 +29,15 @@ public class TransactionsService internal constructor(
     private val client: CryptoChiefClient,
     private val transport: HttpTransport,
 ) {
+
+    /** Estimated network fee for the described transfer; nothing is signed or broadcast. */
+    public suspend fun estimate(request: EstimateTransactionRequest): EstimateTransactionResponse =
+        transport.send(
+            path = "/v1/transaction/estimate",
+            requestSerializer = serializer(),
+            responseSerializer = serializer(),
+            body = request,
+        )
 
     public suspend fun sign(request: SignTransactionRequest): SignTransactionResponse =
         transport.send(
