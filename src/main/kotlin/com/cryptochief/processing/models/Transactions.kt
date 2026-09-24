@@ -18,7 +18,13 @@ public object TxStatus {
     public const val FAILED: String = "failed"
     public const val EXPIRED: String = "expired"
 
-    public val TERMINAL: Set<String> = setOf(CONFIRMED, FAILED, EXPIRED)
+    /**
+     * EVM: replaced by a newer signature from the same address before it was executed;
+     * `error_reason` is `SUPERSEDED_BY:<new uuid>`.
+     */
+    public const val CANCELLED: String = "cancelled"
+
+    public val TERMINAL: Set<String> = setOf(CONFIRMED, FAILED, EXPIRED, CANCELLED)
 }
 
 @Serializable
@@ -58,6 +64,11 @@ public data class SignTransactionResponse(
     @SerialName("expires_at") val expiresAt: String = "",
     @SerialName("chain_family") val chainFamily: String = "",
     @SerialName("network") val network: Chain? = null,
+    /**
+     * EVM: uuids of the earlier unexecuted signatures from the same address that this one
+     * replaced; they turn [TxStatus.CANCELLED]. Empty when there were none.
+     */
+    @SerialName("superseded_uuids") val supersededUuids: List<String> = emptyList(),
 )
 
 @Serializable
@@ -135,6 +146,7 @@ public data class TransactionInfo(
     @SerialName("actual_fee_fiat") val actualFeeFiat: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
+    /** Not sent by the API; read [errorReason]. */
     @SerialName("error") val error: String? = null,
     /**
      * Confirmations of the transaction. Always sent. 0 until it is in a block; grows while `broadcasted`.
@@ -143,6 +155,12 @@ public data class TransactionInfo(
     @SerialName("confirmations") val confirmations: Int = 0,
     /** Confirmations the network requires. Always sent. The transaction becomes `confirmed` at this count. */
     @SerialName("required_confirmations") val requiredConfirmations: Int = 0,
+    /**
+     * Why the transaction is `failed`, `expired` or `cancelled` (`SUPERSEDED_BY:<uuid>`), or why
+     * a `signed` one could not be executed yet (`NONCE_GAP: missing_nonce=<n> blocking_uuid=<uuid>`,
+     * `NONCE_ALREADY_USED: chain_nonce=<n>`).
+     */
+    @SerialName("error_reason") val errorReason: String? = null,
 ) {
     public val isTerminal: Boolean get() = status in TxStatus.TERMINAL
     public val succeeded: Boolean get() = status == TxStatus.CONFIRMED

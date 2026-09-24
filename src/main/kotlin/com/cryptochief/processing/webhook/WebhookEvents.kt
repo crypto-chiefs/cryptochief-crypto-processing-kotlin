@@ -30,6 +30,7 @@ public data class PayoutWebhookEvent(
     @SerialName("required_confirmations") val requiredConfirmations: Int? = null,
 )
 
+/** `transaction.confirmed`, `transaction.failed`, `transaction.expired` or `transaction.cancelled`. */
 @Serializable
 public data class TransactionWebhookEvent(
     @SerialName("event") val event: String = "",
