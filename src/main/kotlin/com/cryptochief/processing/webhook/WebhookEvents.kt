@@ -75,6 +75,46 @@ public data class PayInWebhookEvent(
     @SerialName("payment_network") val paymentNetwork: Chain? = null,
     @SerialName("to_address") val toAddress: String? = null,
     @SerialName("txid") val txid: String? = null,
+    /**
+     * The multi-payment fields below appear only on orders created with `is_payment_multiple`
+     * (see `CreatePayInRequest.isPaymentMultiple`); on any other event they are absent and
+     * decode to the defaults.
+     */
+    @SerialName("is_payment_multiple") val isPaymentMultiple: Boolean = false,
+    /** Sum of every receipt so far, in the payment coin. */
+    @SerialName("received_amount_crypto") val receivedAmountCrypto: String? = null,
+    /** What is still missing; `null` once nothing is. */
+    @SerialName("remaining_amount_crypto") val remainingAmountCrypto: String? = null,
+    /** Every receipt accumulated by the order, oldest first. */
+    @SerialName("payments") val payments: List<PayInWebhookPayment> = emptyList(),
+) {
+    public companion object {
+        /**
+         * A payment arrived but the invoiced amount is not yet collected — sent on EVERY
+         * receipt, with [payments] grown by one. The order sits in
+         * `PayInStatus.WRONG_AMOUNT_WAITING`; the remainder is payable until
+         * `expired_at` + 1 hour.
+         */
+        public const val EVENT_WRONG_AMOUNT_WAITING: String = "invoice.wrong_amount_waiting"
+        /**
+         * A payment arrived after the order's final status, inside the observation window
+         * (`expired_at` + 1 hour). The order status does NOT change; [prevStatus] holds the
+         * final status the order had already settled in.
+         */
+        public const val EVENT_LATE_PAYMENT: String = "invoice.late_payment"
+    }
+}
+
+/** One receipt of a multi-payment pay-in order, an entry of [PayInWebhookEvent.payments]. */
+@Serializable
+public data class PayInWebhookPayment(
+    @SerialName("txid") val txid: String = "",
+    @SerialName("amount_crypto") val amountCrypto: String = "",
+    @SerialName("confirmations") val confirmations: Int = 0,
+    /** `mempool`, `confirming`, `final` or `dropped`. */
+    @SerialName("status") val status: String = "",
+    /** When the platform first saw the transaction. */
+    @SerialName("seen_at") val seenAt: String = "",
 )
 
 @Serializable

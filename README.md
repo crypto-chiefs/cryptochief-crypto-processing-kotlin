@@ -137,6 +137,15 @@ val invoice = client.payIns.create(
 println("pay to ${invoice.toAddress}")
 ```
 
+`accuracyPaymentPercent` is the accepted deviation from the invoiced amount, percent — min `-1`,
+max `15`, default `5`; `-1` is the wildcard: any received amount counts, and the invoice settles
+as `paid`, `paid_less` or `paid_over` by direction. With `isPaymentMultiple = true` several
+transactions may pay one invoice: an underpayment parks it in `wrong_amount_waiting` (the remainder
+stays payable until `expired_at` + 1 hour), every receipt fires `invoice.wrong_amount_waiting`,
+and a payment landing after the final status fires `invoice.late_payment` — the events and the
+`PayIn` itself then carry `receivedAmountCrypto`, `remainingAmountCrypto` and the accumulated
+`payments[]`.
+
 ## Wallets
 
 Generate a wallet of any type. `label` names it for whoever reads a list of a hundred

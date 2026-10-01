@@ -1,6 +1,7 @@
 package com.cryptochief.processing
 
 import com.cryptochief.processing.http.RequestSigner
+import com.cryptochief.processing.models.PayInStatus
 import com.cryptochief.processing.models.SweepStatus
 import com.cryptochief.processing.webhook.PayInWebhookEvent
 import com.cryptochief.processing.webhook.PayoutWebhookEvent
@@ -278,6 +279,65 @@ class WebhookTest {
         val event = WebhookVerifier.parse<PayInWebhookEvent>(apiKey, body, headers(body), 300.seconds) { at }
         assertEquals("invoice.confirming", event.event)
         assertNull(event.txid)
+    }
+
+    @Test
+    fun `pay-in multi-payment webhook carries every accumulated payment`() {
+        val event = signedHandle<PayInWebhookEvent>(
+            """
+            {"event":"invoice.wrong_amount_waiting","uuid":"i-2","order_id":"o-2","user_id":"u-1",
+             "status":"wrong_amount_waiting","prev_status":"pending","mode":"crypto",
+             "amount_crypto":"25.000000","fact_amount_crypto":"10.500000",
+             "payment_coin":"USDT","payment_network":"TRON_MAINNET","to_address":"TDest","txid":"tx-a",
+             "is_payment_multiple":true,"received_amount_crypto":"10.500000","remaining_amount_crypto":"14.500000",
+             "payments":[
+               {"txid":"tx-a","amount_crypto":"10","confirmations":19,"status":"final","seen_at":"2026-09-30T10:00:00Z"},
+               {"txid":"tx-b","amount_crypto":"0.5","confirmations":3,"status":"confirming","seen_at":"2026-09-30T10:05:00Z"}
+             ]}
+            """.trimIndent(),
+        )
+
+        assertEquals(PayInWebhookEvent.EVENT_WRONG_AMOUNT_WAITING, event.event)
+        assertEquals(PayInStatus.WRONG_AMOUNT_WAITING, event.status)
+        assertTrue(event.isPaymentMultiple)
+        assertEquals("10.500000", event.receivedAmountCrypto)
+        assertEquals("14.500000", event.remainingAmountCrypto)
+        assertEquals(2, event.payments.size)
+        assertEquals("tx-a", event.payments[0].txid)
+        assertEquals("10", event.payments[0].amountCrypto)
+        assertEquals(19, event.payments[0].confirmations)
+        assertEquals("final", event.payments[0].status)
+        assertEquals("2026-09-30T10:00:00Z", event.payments[0].seenAt)
+        assertEquals("tx-b", event.payments[1].txid)
+        assertEquals("confirming", event.payments[1].status)
+    }
+
+    @Test
+    fun `pay-in webhook without multi-payment fields still decodes`() {
+        val late = signedHandle<PayInWebhookEvent>(
+            """
+            {"event":"invoice.late_payment","uuid":"i-3","order_id":"o-3","user_id":"u-1",
+             "status":"paid","prev_status":"paid","mode":"crypto",
+             "amount_crypto":"25.000000","fact_amount_crypto":"27.000000",
+             "payment_coin":"USDT","payment_network":"TRON_MAINNET","to_address":"TDest","txid":"tx-late",
+             "is_payment_multiple":true,"received_amount_crypto":"27.000000",
+             "payments":[{"txid":"tx-late","amount_crypto":"2","confirmations":21,"status":"final",
+                          "seen_at":"2026-09-30T11:00:00Z"}]}
+            """.trimIndent(),
+        )
+        assertEquals(PayInWebhookEvent.EVENT_LATE_PAYMENT, late.event)
+        assertEquals(PayInStatus.PAID, late.status)
+        assertEquals("paid", late.prevStatus)
+        assertNull(late.remainingAmountCrypto)
+        assertEquals("tx-late", late.payments.single().txid)
+
+        val plain = signedHandle<PayInWebhookEvent>(
+            """{"event":"invoice.paid","uuid":"i-4","order_id":"o-4","status":"paid"}""",
+        )
+        assertFalse(plain.isPaymentMultiple)
+        assertNull(plain.receivedAmountCrypto)
+        assertNull(plain.remainingAmountCrypto)
+        assertTrue(plain.payments.isEmpty())
     }
 
     @Test

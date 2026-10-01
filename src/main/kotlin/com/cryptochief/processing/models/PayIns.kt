@@ -4,6 +4,7 @@ import com.cryptochief.processing.Asset
 import com.cryptochief.processing.AssetsPolicy
 import com.cryptochief.processing.Chain
 import com.cryptochief.processing.ChainFamily
+import com.cryptochief.processing.webhook.PayInWebhookPayment
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -17,11 +18,21 @@ public object PayInStatus {
     public const val PENDING: String = "pending"
     public const val PROCESSING: String = "processing"
     public const val PROCESS: String = "process"
+    /**
+     * An underpayment on a multi-payment order (see [CreatePayInRequest.isPaymentMultiple]):
+     * the remainder stays payable until `expired_at` + 1 hour. NOT terminal - the order can
+     * still reach [PAID], so it is not in [TERMINAL].
+     */
+    public const val WRONG_AMOUNT_WAITING: String = "wrong_amount_waiting"
     public const val PAID: String = "paid"
+    /** Final, paid short of the invoiced amount - within [CreatePayInRequest.accuracyPaymentPercent]. */
+    public const val PAID_LESS: String = "paid_less"
+    /** Final, paid beyond the invoiced amount - within [CreatePayInRequest.accuracyPaymentPercent]. */
+    public const val PAID_OVER: String = "paid_over"
     public const val CANCEL: String = "cancel"
     public const val EXPIRED: String = "expired"
 
-    public val TERMINAL: Set<String> = setOf(PAID, CANCEL, EXPIRED)
+    public val TERMINAL: Set<String> = setOf(PAID, PAID_LESS, PAID_OVER, CANCEL, EXPIRED)
 }
 
 /**
@@ -65,7 +76,19 @@ public data class CreatePayInRequest(
     @SerialName("url_success") val urlSuccess: String? = null,
     @SerialName("url_error") val urlError: String? = null,
     @SerialName("additional_data") val additionalData: String? = null,
+    /**
+     * Acceptable deviation of the received amount from the invoiced one, percent: min `-1`,
+     * max `15`, default `5` when omitted. `-1` is the wildcard - ANY received amount counts,
+     * and the final status is `paid`, `paid_less` or `paid_over` by direction.
+     */
     @SerialName("accuracy_payment_percent") val accuracyPaymentPercent: Int? = null,
+    /**
+     * Let the invoice be paid by several transactions: an underpayment moves the order to
+     * [PayInStatus.WRONG_AMOUNT_WAITING] (webhook event
+     * `invoice.wrong_amount_waiting` on EVERY receipt), and the remainder stays payable until
+     * `expired_at` + 1 hour. Omit or `false` for the default single-payment behaviour.
+     */
+    @SerialName("is_payment_multiple") val isPaymentMultiple: Boolean? = null,
     @SerialName("amount_fiat") val amountFiat: String? = null,
     @SerialName("currency") val currency: String? = null,
     @SerialName("course_source") val courseSource: String? = null,
@@ -103,6 +126,18 @@ public data class PayIn(
     @SerialName("url_error") val urlError: String? = null,
     @SerialName("additional_data") val additionalData: String? = null,
     @SerialName("can_cancel") val canCancel: Boolean? = null,
+    /**
+     * The multi-payment fields below appear only on orders created with
+     * [CreatePayInRequest.isPaymentMultiple]; on any other order they are absent and decode
+     * to the defaults.
+     */
+    @SerialName("is_payment_multiple") val isPaymentMultiple: Boolean = false,
+    /** Sum of every receipt so far, in the payment coin. */
+    @SerialName("received_amount_crypto") val receivedAmountCrypto: String? = null,
+    /** What is still missing; `null` once nothing is. */
+    @SerialName("remaining_amount_crypto") val remainingAmountCrypto: String? = null,
+    /** Every receipt accumulated by the order, oldest first - the same entries the webhook carries. */
+    @SerialName("payments") val payments: List<PayInWebhookPayment> = emptyList(),
     @SerialName("expired_at") val expiredAt: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,

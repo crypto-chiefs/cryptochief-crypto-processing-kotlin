@@ -47,6 +47,10 @@ fun main(args: Array<String>): Unit = runBlocking {
                     asset = Asset(network = Chain.TRON_MAINNET, coin = "USDT"),
                     lifetimeSec = 3600,
                     urlCallback = "https://example.com/webhooks/invoice",
+                    // accuracyPaymentPercent = -1 accepts ANY received amount (paid/paid_less/paid_over);
+                    // isPaymentMultiple = true lets several transactions settle the invoice - every receipt
+                    // fires invoice.wrong_amount_waiting with the accumulated payments[], a late one
+                    // invoice.late_payment.
                 ),
             )
 

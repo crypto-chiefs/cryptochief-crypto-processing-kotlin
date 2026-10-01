@@ -154,9 +154,18 @@ class RequestBodyTest {
                 CreatePayInRequest(
                     orderId = "o1", userId = "u1", mode = "crypto", toAddress = null, masterWalletAddress = null,
                     environment = null, lifetimeSec = null, urlCallback = null, urlSuccess = null, urlError = null,
-                    additionalData = null, accuracyPaymentPercent = null, amountFiat = null, currency = null,
-                    courseSource = null, assets = null, amountCrypto = null, asset = null,
+                    additionalData = null, accuracyPaymentPercent = null, isPaymentMultiple = null, amountFiat = null,
+                    currency = null, courseSource = null, assets = null, amountCrypto = null, asset = null,
                 ),
+            )
+        },
+        Case(
+            "payIns.create, wildcard accuracy and multiple payments",
+            "/v1/payments/order/create",
+            """{"accuracy_payment_percent":-1,"is_payment_multiple":true,"mode":"crypto","order_id":"o1","user_id":"u1"}""",
+        ) {
+            client.payIns.create(
+                CreatePayInRequest("o1", "u1", "crypto", accuracyPaymentPercent = -1, isPaymentMultiple = true),
             )
         },
         Case(

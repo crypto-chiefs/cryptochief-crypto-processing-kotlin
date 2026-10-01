@@ -16,6 +16,7 @@ import com.cryptochief.processing.models.ForceSweepResponse
 import com.cryptochief.processing.models.ListWalletsResponse
 import com.cryptochief.processing.models.PayIn
 import com.cryptochief.processing.models.PayInHistoryResponse
+import com.cryptochief.processing.models.PayInStatus
 import com.cryptochief.processing.models.PayoutCoinBalance
 import com.cryptochief.processing.models.PayoutFeeInfo
 import com.cryptochief.processing.models.PayoutHistoryResponse
@@ -39,6 +40,7 @@ import com.cryptochief.processing.models.WebhookPayload
 import com.cryptochief.processing.models.WebhookResendResult
 import com.cryptochief.processing.models.Withdrawal
 import com.cryptochief.processing.webhook.PayInWebhookEvent
+import com.cryptochief.processing.webhook.PayInWebhookPayment
 import com.cryptochief.processing.webhook.PayoutWebhookEvent
 import com.cryptochief.processing.webhook.StaticDepositWebhookEvent
 import com.cryptochief.processing.webhook.SweepWebhookEvent
@@ -51,6 +53,8 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
@@ -161,6 +165,52 @@ class ResponseDecodeTest {
         assertEquals("", wallet.chainFamily.code)
         assertEquals(emptyList<WalletCoinBalance>(), wallet.coins)
         assertEquals(false, wallet.frozen)
+    }
+
+    /** create, info and history answer with the same [PayIn], multi-payment receipts included. */
+    @Test
+    fun `a pay-in order carries the accumulated multi-payment receipts`() {
+        val payIn = SdkJson.instance.decodeFromString(
+            serializer<PayIn>(),
+            """
+            {"type":"payin","uuid":"i-1","order_id":"o-1","user_id":"u-1","status":"wrong_amount_waiting",
+             "mode":"crypto","amount_crypto":"25.000000","payment_coin":"USDT","payment_network":"TRON_MAINNET",
+             "to_address":"TDest","can_cancel":false,
+             "is_payment_multiple":true,"received_amount_crypto":"10.500000","remaining_amount_crypto":"14.500000",
+             "payments":[
+               {"txid":"tx-a","amount_crypto":"10","confirmations":19,"status":"final","seen_at":"2026-09-30T10:00:00Z"},
+               {"txid":"tx-b","amount_crypto":"0.5","confirmations":3,"status":"confirming","seen_at":"2026-09-30T10:05:00Z"}
+             ]}
+            """.trimIndent(),
+        )
+
+        assertEquals(PayInStatus.WRONG_AMOUNT_WAITING, payIn.status)
+        assertFalse(payIn.isTerminal)
+        assertTrue(payIn.isPaymentMultiple)
+        assertEquals("10.500000", payIn.receivedAmountCrypto)
+        assertEquals("14.500000", payIn.remainingAmountCrypto)
+        assertEquals(2, payIn.payments.size)
+        assertEquals("tx-b", payIn.payments[1].txid)
+        assertEquals("0.5", payIn.payments[1].amountCrypto)
+        assertEquals(3, payIn.payments[1].confirmations)
+        assertEquals("confirming", payIn.payments[1].status)
+        assertEquals("2026-09-30T10:05:00Z", payIn.payments[1].seenAt)
+    }
+
+    /** An order without the multi-payment members decodes to the defaults. */
+    @Test
+    fun `a single-payment pay-in order has no receipts`() {
+        val payIn = SdkJson.instance.decodeFromString(
+            serializer<PayIn>(),
+            """{"type":"payin","uuid":"i-2","order_id":"o-2","status":"paid_less"}""",
+        )
+
+        assertEquals(PayInStatus.PAID_LESS, payIn.status)
+        assertTrue(payIn.isTerminal)
+        assertFalse(payIn.isPaymentMultiple)
+        assertEquals(null, payIn.receivedAmountCrypto)
+        assertEquals(null, payIn.remainingAmountCrypto)
+        assertEquals(emptyList<PayInWebhookPayment>(), payIn.payments)
     }
 
     /** A body that is not an object is still a decode failure. */

@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.time.Duration
 
@@ -65,6 +66,27 @@ class PollingTest {
     fun `waitForPayIn applies 10 minutes when options set only the interval`() = runTest {
         val last = pollPayIn(intervalOnly) {
             PayIn(uuid = "o-1", orderId = "order-1", status = PayInStatus.PENDING)
+        }
+
+        assertEquals(Duration.ofMinutes(10).toMillis(), testScheduler.currentTime)
+        assertFalse(last.isTerminal)
+    }
+
+    @Test
+    fun `waitForPayIn returns at once on a paid_less or paid_over snapshot`() = runTest {
+        for (status in listOf(PayInStatus.PAID_LESS, PayInStatus.PAID_OVER)) {
+            val last = pollPayIn(intervalOnly) { PayIn(uuid = "o-1", orderId = "order-1", status = status) }
+
+            assertEquals(status, last.status)
+            assertTrue(last.isTerminal)
+        }
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `waitForPayIn keeps waiting on wrong_amount_waiting`() = runTest {
+        val last = pollPayIn(intervalOnly) {
+            PayIn(uuid = "o-1", orderId = "order-1", status = PayInStatus.WRONG_AMOUNT_WAITING)
         }
 
         assertEquals(Duration.ofMinutes(10).toMillis(), testScheduler.currentTime)
