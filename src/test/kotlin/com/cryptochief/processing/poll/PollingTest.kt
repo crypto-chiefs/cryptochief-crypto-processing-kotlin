@@ -1,5 +1,6 @@
 package com.cryptochief.processing.poll
 
+import com.cryptochief.processing.ApiException
 import com.cryptochief.processing.Chain
 import com.cryptochief.processing.PollOptions
 import com.cryptochief.processing.models.PayIn
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import java.time.Duration
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -103,5 +105,23 @@ class PollingTest {
 
         assertEquals(PayoutStatus.PAID, last.status)
         assertEquals(Duration.ofSeconds(20).toMillis(), testScheduler.currentTime)
+    }
+
+    @Test
+    fun `a 503 is skipped and a 500 ends the wait`() {
+        var calls = 0
+        val ex = assertThrows<ApiException> {
+            runTest {
+                pollPayout(intervalOnly) {
+                    calls++
+                    if (calls == 1) throw ApiException("SERVICE_ERROR", 503, "unavailable")
+                    if (calls == 2) PayoutInfo(uuid = "p-1", status = PayoutStatus.CONFIRM_CHECK)
+                    else throw ApiException("INTERNAL_ERROR", 500, "internal error")
+                }
+            }
+        }
+
+        assertEquals(500, ex.status)
+        assertEquals(3, calls)
     }
 }

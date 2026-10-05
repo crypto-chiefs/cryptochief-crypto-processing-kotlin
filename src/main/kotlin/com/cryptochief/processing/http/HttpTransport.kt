@@ -6,6 +6,7 @@ import com.cryptochief.processing.ErrorCode
 import com.cryptochief.processing.IdempotencyKey
 import com.cryptochief.processing.NetworkException
 import com.cryptochief.processing.Options
+import com.cryptochief.processing.isRetryableStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -151,16 +152,14 @@ internal class HttpTransport(
                 }
                 .build()
 
+            // Repeated: no response, an unreadable response body, and HTTP 502, 503, 504.
             val response: Response = try {
                 http.newCall(request).awaitResponse()
             } catch (e: IOException) {
-                val netErr = NetworkException("cryptochief: request failed: ${e.message}", e)
-                if (attempt + 1 < attempts) {
-                    attempt++
-                    backoff(attempt, path)
-                    continue
-                }
-                throw netErr
+                if (attempt + 1 >= attempts) throw NetworkException("cryptochief: request failed: ${e.message}", e)
+                attempt++
+                backoff(attempt, path)
+                continue
             }
 
             val status: Int
@@ -169,8 +168,10 @@ internal class HttpTransport(
                 status = response.code
                 bytes = response.body?.bytes() ?: ByteArray(0)
             } catch (e: IOException) {
-                response.closeQuietly()
-                throw NetworkException("cryptochief: read response body: ${e.message}", e)
+                if (attempt + 1 >= attempts) throw NetworkException("cryptochief: read response body: ${e.message}", e)
+                attempt++
+                backoff(attempt, path)
+                continue
             } finally {
                 response.closeQuietly()
             }
@@ -186,7 +187,7 @@ internal class HttpTransport(
                 log.debug("cryptochief clock offset={}s path={}", clockOffsetSeconds, path)
                 continue
             }
-            if (status >= 500 && attempt + 1 < attempts) {
+            if (isRetryableStatus(status) && attempt + 1 < attempts) {
                 attempt++
                 backoff(attempt, path)
                 continue

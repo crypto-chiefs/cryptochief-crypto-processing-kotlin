@@ -35,9 +35,12 @@ public class ApiException(
     public val raw: String? = null,
 ) : CryptoChiefException(buildApiMessage(code, status, description)) {
 
-    /** Retryable when the failure is 5xx or `NETWORK_ERROR`. */
+    /**
+     * True for HTTP 502, 503 and 504, the statuses the client repeats, and for a
+     * `NETWORK_ERROR` without an HTTP status. False for every other status, 500 included.
+     */
     public val retryable: Boolean
-        get() = status in 500..599 || code == ErrorCode.NETWORK_ERROR
+        get() = isRetryableStatus(status) || (status == 0 && code == ErrorCode.NETWORK_ERROR)
 
     private companion object {
         private fun buildApiMessage(code: String, status: Int, description: String): String =
@@ -48,6 +51,9 @@ public class ApiException(
             }
     }
 }
+
+/** HTTP statuses the client repeats within [Options.maxRetries]: 502, 503, 504. */
+internal fun isRetryableStatus(status: Int): Boolean = status == 502 || status == 503 || status == 504
 
 /** Connection, DNS, TLS, timeout, or read failure. */
 public class NetworkException(

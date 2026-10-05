@@ -12,7 +12,7 @@ Kotlin / JVM SDK for the [Crypto Chief](https://crypto-chief.com/processing/) cr
 
 ```kotlin
 dependencies {
-    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.13.0")
+    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.15.0")
 }
 ```
 
@@ -20,7 +20,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.13.0'
+    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.15.0'
 }
 ```
 
@@ -30,7 +30,7 @@ dependencies {
 <dependency>
   <groupId>com.crypto-chief</groupId>
   <artifactId>cryptochief-crypto-processing-kotlin</artifactId>
-  <version>0.13.0</version>
+  <version>0.15.0</version>
 </dependency>
 ```
 
@@ -615,7 +615,8 @@ if (!last.isTerminal) println("still ${last.status}")
 | `waitForTransaction`, `waitForPayIn` | 10 minutes (`PollOptions.DEFAULT_TIMEOUT`) |
 
 On timeout the last snapshot is returned; check `isTerminal`. A payout stays `confirm_check`
-until every source reaches `requiredConfirmations`.
+until every source reaches `requiredConfirmations`. A poll answered with 502, 503 or 504 is
+skipped; any other `ApiException` is thrown.
 
 ## Confirmations
 
@@ -766,7 +767,7 @@ val client = CryptoChiefClient.create {
     apiKey            = "..."
     baseUrl           = "https://api-processing.crypto-chief.com" // the default; override for a white-label installation
     requestTimeout    = Duration.ofSeconds(30)
-    maxRetries        = 5
+    maxRetries        = 5                                         // repeats after 502, 503, 504 and network errors
     initialRetryDelay = Duration.ofMillis(250)
     maxRetryDelay     = Duration.ofSeconds(10)
     userAgent         = "my-app/1.2.3"
@@ -880,9 +881,10 @@ try {
 and from the white-label platform envelope (`error.details.code`, else `error.name`). A body
 without a code gives `HTTP_<status>`.
 
-5xx is retried with exponential backoff and full jitter. 4xx is not retried. The exception is
-one repeat after `SIGNATURE_TIMESTAMP_OUT_OF_RANGE`, with the clock offset taken from
-`server_time`.
+HTTP 502, 503, 504 and network errors are retried up to `maxRetries` times with exponential
+backoff and full jitter. Every other status, 500 included, is not retried. The exception is one
+repeat after `SIGNATURE_TIMESTAMP_OUT_OF_RANGE`, with the clock offset taken from `server_time`.
+`ApiException.retryable` is `true` for 502, 503 and 504.
 
 ## Other SDKs
 

@@ -39,6 +39,8 @@ public class Options private constructor(
         public var tonRpcBaseUrl: String = DEFAULT_TON_RPC_BASE_URL
         public var userAgent: String = "cryptochief-kotlin/${BuildInfo.VERSION}"
         public var requestTimeout: Duration = 60.seconds.toJavaDuration()
+
+        /** Repeats after HTTP 502, 503, 504 or a network error; 0 turns them off. Other statuses are not repeated. */
         public var maxRetries: Int = 3
         public var initialRetryDelay: Duration = 200.milliseconds.toJavaDuration()
         public var maxRetryDelay: Duration = 5.seconds.toJavaDuration()
@@ -67,5 +69,5 @@ public class Options private constructor(
 }
 
 public object BuildInfo {
-    public const val VERSION: String = "0.14.0"
+    public const val VERSION: String = "0.15.0"
 }

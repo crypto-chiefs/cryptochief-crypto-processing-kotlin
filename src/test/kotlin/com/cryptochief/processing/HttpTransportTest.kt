@@ -11,8 +11,10 @@ import kotlinx.serialization.serializer
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
@@ -20,7 +22,9 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.io.File
+import java.net.ConnectException
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicInteger
 
 class HttpTransportTest {
 
@@ -49,7 +53,41 @@ class HttpTransportTest {
     fun tearDown() {
         client.close()
         server.shutdown()
+        for (http in ownHttpClients) {
+            http.dispatcher.executorService.shutdown()
+            http.connectionPool.evictAll()
+        }
     }
+
+    private val payout =
+        """{"uuid":"abc","status":"paid","network":"ETH_MAINNET","coin":"ETH","amount":"1","to_address":"0x"}"""
+
+    private val ownHttpClients = mutableListOf<OkHttpClient>()
+
+    /** Fails the first [failures] calls with a connection error before anything is sent; counts every call. */
+    private fun failingFirst(failures: AtomicInteger, attempts: AtomicInteger): OkHttpClient =
+        OkHttpClient.Builder()
+            .retryOnConnectionFailure(false)
+            .addInterceptor { chain ->
+                attempts.incrementAndGet()
+                if (failures.getAndDecrement() > 0) throw ConnectException("Connection refused")
+                chain.proceed(chain.request())
+            }
+            .build()
+            .also { ownHttpClients += it }
+
+    private fun clientWith(http: OkHttpClient): CryptoChiefClient =
+        CryptoChiefClient(
+            Options.builder().apply {
+                merchantId = "mer_test"
+                apiKey = "secret-key"
+                baseUrl = server.url("/").toString().trimEnd('/')
+                maxRetries = 2
+                initialRetryDelay = Duration.ofMillis(1)
+                maxRetryDelay = Duration.ofMillis(5)
+                httpClient = http
+            }.build(),
+        )
 
     @Test
     fun `sends merchant signature headers and signs body`() = runBlocking {
@@ -65,12 +103,94 @@ class HttpTransportTest {
     }
 
     @Test
-    fun `5xx triggers retry`() = runBlocking {
-        server.enqueue(MockResponse().setResponseCode(503).setBody("""{"error":"SERVICE_ERROR","msg":"try again"}"""))
-        server.enqueue(MockResponse().setBody("""{"uuid":"abc","status":"paid","network":"ETH_MAINNET","coin":"ETH","amount":"1","to_address":"0x"}"""))
-        val info = client.payouts.info("abc")
-        assertEquals("abc", info.uuid)
+    fun `502, 503 and 504 are retried and a later success is returned`() = runBlocking {
+        for (status in listOf(502, 503, 504)) {
+            val before = server.requestCount
+            server.enqueue(MockResponse().setResponseCode(status).setBody("""{"error":"SERVICE_ERROR","msg":"try again"}"""))
+            server.enqueue(MockResponse().setBody(payout))
+            val info = client.payouts.info("abc")
+            assertEquals("abc", info.uuid)
+            assertEquals(2, server.requestCount - before, "HTTP $status")
+        }
+    }
+
+    @Test
+    fun `502, 503 and 504 are attempted retries+1 times, then thrown`() = runBlocking {
+        for (status in listOf(502, 503, 504)) {
+            val before = server.requestCount
+            repeat(3) {
+                server.enqueue(MockResponse().setResponseCode(status).setBody("""{"error":"SERVICE_ERROR","msg":"try again"}"""))
+            }
+            val ex = assertThrows<ApiException> { runBlocking { client.payouts.info("abc") } }
+            assertEquals(status, ex.status)
+            assertTrue(ex.retryable, "HTTP $status")
+            assertEquals(3, server.requestCount - before, "HTTP $status")
+        }
+    }
+
+    @Test
+    fun `500 is attempted exactly once`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"ok":false,"error":"INTERNAL_ERROR","msg":"internal error"}"""))
+        server.enqueue(MockResponse().setBody(payout))
+        val ex = assertThrows<ApiException> { runBlocking { client.payouts.info("abc") } }
+        assertEquals(500, ex.status)
+        assertEquals("INTERNAL_ERROR", ex.code)
+        assertFalse(ex.retryable)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `statuses other than 502, 503 and 504 are attempted once`() = runBlocking {
+        for (status in listOf(500, 501, 505, 520, 599, 429, 409, 400)) {
+            val before = server.requestCount
+            server.enqueue(MockResponse().setResponseCode(status).setBody("""{"error":"SERVICE_ERROR","msg":"nope"}"""))
+            val ex = assertThrows<ApiException> { runBlocking { client.payouts.info("abc") } }
+            assertEquals(status, ex.status)
+            assertFalse(ex.retryable, "HTTP $status")
+            assertEquals(1, server.requestCount - before, "HTTP $status")
+        }
+    }
+
+    @Test
+    fun `a connection failure is retried`() = runBlocking {
+        val failures = AtomicInteger(1)
+        val attempts = AtomicInteger()
+        server.enqueue(MockResponse().setBody(payout))
+        clientWith(failingFirst(failures, attempts)).use { c ->
+            assertEquals("abc", c.payouts.info("abc").uuid)
+        }
+        assertEquals(2, attempts.get())
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun `a connection failure on every attempt is attempted retries+1 times`() = runBlocking {
+        val attempts = AtomicInteger()
+        clientWith(failingFirst(AtomicInteger(Int.MAX_VALUE), attempts)).use { c ->
+            assertThrows<NetworkException> { runBlocking { c.payouts.info("abc") } }
+        }
+        assertEquals(3, attempts.get())
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun `a response body read failure is retried`() = runBlocking {
+        server.enqueue(MockResponse().setBody(payout).setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))
+        server.enqueue(MockResponse().setBody(payout))
+        assertEquals("abc", client.payouts.info("abc").uuid)
         assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `retryable is true for 502, 503, 504 only`() {
+        for (status in listOf(502, 503, 504)) {
+            assertTrue(ApiException("SERVICE_ERROR", status, "x").retryable, "HTTP $status")
+        }
+        for (status in listOf(200, 400, 401, 404, 409, 429, 500, 501, 505, 520, 599)) {
+            assertFalse(ApiException("SERVICE_ERROR", status, "x").retryable, "HTTP $status")
+        }
+        assertFalse(ApiException(ErrorCode.NETWORK_ERROR, 500, "x").retryable)
+        assertTrue(ApiException(ErrorCode.NETWORK_ERROR, 0, "x").retryable)
     }
 
     @Test
@@ -141,15 +261,6 @@ class HttpTransportTest {
         assertEquals(body, ex.raw)
     }
 
-    @Test
-    fun `retry budget exhausted surfaces last error`() = runBlocking {
-        repeat(3) {
-            server.enqueue(MockResponse().setResponseCode(502).setBody("""{"error":"SERVICE_ERROR","msg":"bad gateway"}"""))
-        }
-        val ex = assertThrows<ApiException> { runBlocking { client.payouts.info("a") } }
-        assertEquals(502, ex.status)
-        assertEquals(3, server.requestCount)
-    }
 
     /**
      * Responses, TON RPC and webhook events are decoded by one [SdkJson.instance]; a second
