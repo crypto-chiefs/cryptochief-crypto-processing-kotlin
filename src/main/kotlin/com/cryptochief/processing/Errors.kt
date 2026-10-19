@@ -94,6 +94,20 @@ public object ErrorCode {
     public const val SERVICE_ERROR: String = "SERVICE_ERROR"
     public const val UNAUTHORIZED: String = "UNAUTHORIZED"
     public const val URL_CALLBACK_REQUIRED: String = "URL_CALLBACK_REQUIRED"
+
+    /**
+     * `url_callback` of a PayIn, payout, batch payout item or signed transaction: the host is a
+     * non-public IP address, a single-label or local name, or resolves to a non-public address
+     * (HTTP 400).
+     */
+    public const val URL_CALLBACK_HOST_NOT_ALLOWED: String = "url_callback_HOST_NOT_ALLOWED"
+    /** `url_callback`: the scheme is not https or http (HTTP 400). */
+    public const val URL_CALLBACK_SCHEME_INVALID: String = "url_callback_SCHEME_INVALID"
+    /** `url_callback`: not an absolute URL (HTTP 400). */
+    public const val URL_CALLBACK_INVALID: String = "url_callback_INVALID"
+    /** Static wallet `callback_url` (generate, set callback URL) breaks the same rule; the reason is in the message (HTTP 400). */
+    public const val CALLBACK_URL_INVALID: String = "CALLBACK_URL_INVALID"
+
     public const val BATCH_EMPTY: String = "BATCH_EMPTY"
     public const val BATCH_TOO_LARGE: String = "BATCH_TOO_LARGE"
     public const val BATCH_DUPLICATE_ORDER_ID: String = "BATCH_DUPLICATE_ORDER_ID"
@@ -126,6 +140,19 @@ public object ErrorCode {
     public const val CALLS_REQUIRED: String = "CALLS_REQUIRED"
     public const val CALLS_NOT_ALLOWED_FOR_TRANSFER: String = "CALLS_NOT_ALLOWED_FOR_TRANSFER"
     public const val CONTRACT_CALLS_UNSUPPORTED_ON_NETWORK: String = "CONTRACT_CALLS_UNSUPPORTED_ON_NETWORK"
+
+    /**
+     * Transaction estimate or sign of a token transfer: `from_address` holds less of the token
+     * than `value` (HTTP 400). Execute reports it as `PREFLIGHT_FAILED: insufficient_balance`.
+     */
+    public const val INSUFFICIENT_BALANCE: String = "INSUFFICIENT_BALANCE"
+
+    /**
+     * EVM sign: the transaction reverted in simulation (HTTP 400). The contract's reason may
+     * follow (`SIMULATION_REVERTED: <reason>`); compare with `startsWith`.
+     */
+    public const val SIMULATION_REVERTED: String = "SIMULATION_REVERTED"
+
     public const val NETWORK_ERROR: String = "NETWORK_ERROR"
 
     /** The object does not exist OR is not this project's — deliberately indistinguishable. */
