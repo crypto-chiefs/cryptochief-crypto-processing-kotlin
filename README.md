@@ -12,7 +12,7 @@ Kotlin / JVM SDK for the [Crypto Chief](https://crypto-chief.com/processing/) cr
 
 ```kotlin
 dependencies {
-    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.15.1")
+    implementation("com.crypto-chief:cryptochief-crypto-processing-kotlin:0.16.0")
 }
 ```
 
@@ -20,7 +20,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.15.1'
+    implementation 'com.crypto-chief:cryptochief-crypto-processing-kotlin:0.16.0'
 }
 ```
 
@@ -30,7 +30,7 @@ dependencies {
 <dependency>
   <groupId>com.crypto-chief</groupId>
   <artifactId>cryptochief-crypto-processing-kotlin</artifactId>
-  <version>0.15.1</version>
+  <version>0.16.0</version>
 </dependency>
 ```
 
@@ -95,6 +95,14 @@ fun main() = runBlocking {
 | `client.credits` | balance, topup |
 | `client.energy` | quote, rent, order |
 | `client.native` | quote, buy, order |
+
+## Batch payouts
+
+Items returned by `client.payouts.batchEstimate` and `client.payouts.batchExecute` expose
+`BatchItemResult.httpStatus` (`http_status` in JSON): the HTTP status the item would receive
+as a separate request. It is `null` when absent, including successful items.
+`BatchItemResult.retryable` is `true` only for `httpStatus == 502`. Retry an execute item with
+the same `orderId`.
 
 ## Invoices (PayIn)
 

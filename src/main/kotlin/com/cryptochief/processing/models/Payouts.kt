@@ -217,13 +217,18 @@ public data class BatchExecuteRequest(
 )
 
 @Serializable
-public data class BatchItemResult(
+public data class BatchItemResult @JvmOverloads public constructor(
     @SerialName("index") val index: Int = 0,
     @SerialName("order_id") val orderId: String = "",
     @SerialName("status") val status: String = "",
     @SerialName("uuid") val uuid: String? = null,
     @SerialName("error") val error: String? = null,
-)
+    /** HTTP status of the item error; absent for successful items. */
+    @SerialName("http_status") val httpStatus: Int? = null,
+) {
+    /** True only for HTTP 502. Retry execute items with the same `order_id`. */
+    public val retryable: Boolean get() = httpStatus == 502
+}
 
 @Serializable
 public data class BatchExecuteResponse(

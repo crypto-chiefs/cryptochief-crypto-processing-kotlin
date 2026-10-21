@@ -213,6 +213,29 @@ class ResponseDecodeTest {
         assertEquals(emptyList<PayInWebhookPayment>(), payIn.payments)
     }
 
+    @Test
+    fun `batch item serialization preserves HTTP status without the retryable helper`() {
+        listOf(null, 400, 502, 599).forEach { httpStatus ->
+            val item = BatchItemResult(status = "error", error = "FAILED_TO_ESTIMATE_FEE", httpStatus = httpStatus)
+            val encoded = SdkJson.instance.encodeToString(serializer<BatchItemResult>(), item)
+            val statusField = httpStatus?.let { ",\"http_status\":$it" }.orEmpty()
+
+            assertEquals(
+                SdkJson.instance.parseToJsonElement("""{"status":"error","error":"FAILED_TO_ESTIMATE_FEE"$statusField}"""),
+                SdkJson.instance.parseToJsonElement(encoded),
+            )
+            assertEquals(item, SdkJson.instance.decodeFromString(serializer<BatchItemResult>(), encoded))
+        }
+    }
+
+    @Test
+    fun `only batch item HTTP 502 is retryable`() {
+        assertTrue(BatchItemResult(status = "error", httpStatus = 502).retryable)
+        listOf(null, 0, 200, 400, 408, 429, 500, 501, 503, 504, 599).forEach { httpStatus ->
+            assertFalse(BatchItemResult(status = "error", httpStatus = httpStatus).retryable, "HTTP $httpStatus")
+        }
+    }
+
     /** A body that is not an object is still a decode failure. */
     @Test
     fun `a body of the wrong shape still fails`() = runBlocking {

@@ -1,5 +1,6 @@
 package com.cryptochief.processing
 
+import com.cryptochief.processing.models.BatchExecuteRequest
 import com.cryptochief.processing.models.EstimatePayoutRequest
 import com.cryptochief.processing.models.ExecutePayoutRequest
 import com.cryptochief.processing.models.PayoutInfo
@@ -370,6 +371,84 @@ class PayoutsServiceTest {
         assertTrue(out.sources.single().needRefuel)
         assertEquals("gas_refuel", out.serviceOperations.single().type)
         assertEquals("25", out.coins.single().amountAvailable)
+    }
+
+    private fun batchRequest(): BatchExecuteRequest = BatchExecuteRequest(
+        items = List(5) { index ->
+            ExecutePayoutRequest(
+                orderId = "o-${index + 2}",
+                userId = "u-2",
+                network = Chain.TRON_MAINNET,
+                coin = "USDT",
+                amount = "150",
+                toAddress = "TDest",
+                urlCallback = "https://your.app/webhooks/payout",
+            )
+        },
+    )
+
+    @Test
+    fun `batch estimate carries item HTTP statuses and tolerates missing ones`() = runBlocking {
+        enqueue(
+            """
+            {"total": 5, "ok": 1, "failed": 4, "total_estimated_fee_fiat": "1.27",
+             "items": [
+               {"index": 0, "status": "ok", "estimate": {
+                 "amount_requested": "150", "amount_to_receive": "150", "to_address": "TDest",
+                 "fee_info": {"fee_mode": "service", "estimated_fiat": "1.27", "limit_currency": "USD"},
+                 "sources": [], "service_operations": [], "coins": []}},
+               {"index": 1, "status": "error", "error": "FAILED_TO_ESTIMATE_FEE", "http_status": 400},
+               {"index": 2, "status": "error", "error": "FAILED_TO_ESTIMATE_FEE", "http_status": 502},
+               {"index": 3, "status": "error", "error": "INSUFFICIENT_FUNDS"},
+               {"index": 4, "status": "error", "error": "FUTURE_ERROR", "http_status": 599}
+             ]}
+            """.trimIndent(),
+        )
+
+        val out = client.payouts.batchEstimate(batchRequest())
+
+        assertEquals("/v1/payout/batch/estimate", server.takeRequest().path)
+        assertEquals(5, out.total)
+        assertEquals(listOf(0, 1, 2, 3, 4), out.items.map { it.index })
+        assertEquals(listOf("ok", "error", "error", "error", "error"), out.items.map { it.status })
+        assertEquals(listOf(null, 400, 502, null, 599), out.items.map { it.httpStatus })
+        assertEquals(listOf(false, false, true, false, false), out.items.map { it.retryable })
+        assertEquals("FAILED_TO_ESTIMATE_FEE", out.items[1].error)
+        assertEquals("FAILED_TO_ESTIMATE_FEE", out.items[2].error)
+        assertNull(out.items[0].error)
+    }
+
+    @Test
+    fun `batch execute carries item HTTP statuses and tolerates missing ones`() = runBlocking {
+        enqueue(
+            """
+            {"batch_uuid": "batch-1", "total": 5, "accepted": 1, "rejected": 4,
+             "items": [
+               {"index": 0, "order_id": "o-2", "status": "queue", "uuid": "p-2", "payout": $queuedBody},
+               {"index": 1, "order_id": "o-3", "status": "error", "error": "FAILED_TO_ESTIMATE_FEE", "http_status": 400},
+               {"index": 2, "order_id": "o-4", "status": "error", "error": "FAILED_TO_ESTIMATE_FEE", "http_status": 502},
+               {"index": 3, "order_id": "o-5", "status": "error", "error": "INSUFFICIENT_FUNDS"},
+               {"index": 4, "order_id": "o-6", "status": "error", "error": "FUTURE_ERROR", "http_status": 599}
+             ]}
+            """.trimIndent(),
+        )
+
+        val out = client.payouts.batchExecute(batchRequest())
+
+        assertEquals("/v1/payout/batch/execute", server.takeRequest().path)
+        assertEquals("batch-1", out.batchUuid)
+        assertEquals(5, out.total)
+        assertEquals(1, out.accepted)
+        assertEquals(4, out.rejected)
+        assertEquals(listOf(0, 1, 2, 3, 4), out.items.map { it.index })
+        assertEquals(listOf("o-2", "o-3", "o-4", "o-5", "o-6"), out.items.map { it.orderId })
+        assertEquals(listOf("queue", "error", "error", "error", "error"), out.items.map { it.status })
+        assertEquals(listOf(null, 400, 502, null, 599), out.items.map { it.httpStatus })
+        assertEquals(listOf(false, false, true, false, false), out.items.map { it.retryable })
+        assertEquals("FAILED_TO_ESTIMATE_FEE", out.items[1].error)
+        assertEquals("FAILED_TO_ESTIMATE_FEE", out.items[2].error)
+        assertEquals("p-2", out.items[0].uuid)
+        assertNull(out.items[0].error)
     }
 
     @Test
